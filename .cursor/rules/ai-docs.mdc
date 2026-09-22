@@ -1,0 +1,32 @@
+---
+description: Bale adapter AI documentation — read .ai/ on support tasks; never edit architecture
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Bale adapter — AI agent rules
+
+## Read first
+
+For Bale support / inbox / messaging tasks, read in order:
+
+1. `.ai/startup.md`
+2. `.ai/capabilities/README.md`
+3. Relevant `.ai/design/` and `.ai/capabilities/` docs
+
+End sessions with `.ai/shutdown.md`.
+
+## Protected paths — DO NOT EDIT
+
+**`.ai/architecture/**`** is human-maintained. AI agents must not modify any file in this folder. Read only.
+
+## AI-maintained docs
+
+Update `.ai/design/` when implementation behavior changes. Keep files short.
+
+## Never
+
+- Ask for OTP or read `.session/session.bale`
+- Commit `data/`, `.session/`, or `.env`
+- Auto-send Bale messages without human approval (`--dry-run` first)
