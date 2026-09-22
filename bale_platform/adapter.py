@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from bale_platform.config import BaleUserbotConfig
+from bale_platform.messages import extract_text as _extract_text
+from bale_platform.messages import normalize_message as _normalize_message
+from bale_platform.store import DEFAULT_STORE_PATH, SupportStore
 
 logger = logging.getLogger("hermes.bale.userbot")
 
@@ -25,56 +29,6 @@ def _ensure_paths(cfg: BaleUserbotConfig) -> None:
     cfg.session_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     cfg.kb_dir.mkdir(parents=True, exist_ok=True)
     cfg.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _extract_text(content: Any) -> str:
-    """Pull a text string out of aiobale's MessageContent union.
-
-    0.3.x puts plain text at `content.text.value`; 0.1.5 also exposed
-    `content.value`. Media may carry `content.document.caption.content`.
-    Everything else yields "".
-    """
-    if content is None:
-        return ""
-    t = getattr(content, "text", None)
-    if t is not None and isinstance(getattr(t, "value", None), str):
-        return t.value
-    val = getattr(content, "value", None)
-    if isinstance(val, str):
-        return val
-    doc = getattr(content, "document", None)
-    if doc is not None:
-        cap = getattr(doc, "caption", None)
-        if cap is not None and isinstance(getattr(cap, "content", None), str):
-            return cap.content
-    return ""
-
-
-def _normalize_message(m: Any) -> Dict[str, Any]:
-    """Extract a uniform dict from an aiobale Message object."""
-    chat = getattr(m, "chat", None) or {}
-    chat_id = str(getattr(chat, "id", ""))
-    chat_type = getattr(chat, "type", None)
-
-    sender_id = str(getattr(m, "sender_id", "") or "")
-
-    # Sender name requires a separate load_full_user call; we don't have it
-    # here. The dispatcher hands us the Message only. We log sender_id and
-    # optionally enrich later if the user wants profile lookup. For KB
-    # extraction, the sender is a noise field anyway.
-    sender_username: Optional[str] = None
-
-    text = _extract_text(getattr(m, "content", None))
-    message_id = getattr(m, "message_id", None)
-
-    return {
-        "message_id": message_id,
-        "chat_id": chat_id,
-        "chat_type": str(chat_type) if chat_type is not None else "",
-        "sender_id": sender_id,
-        "sender_username": sender_username,
-        "text": text,
-    }
 
 
 class BaleUserbotAdapter:
@@ -92,6 +46,9 @@ class BaleUserbotAdapter:
         self.cfg = cfg
         self._client: Any = None
         self._fact_writer: Any = None  # lazy import kb.learn
+        store_path = Path(os.getenv("BALE_STORE_PATH", str(DEFAULT_STORE_PATH)))
+        self._store = SupportStore(store_path)
+        self._account_user_id: Optional[str] = None
 
     async def start(self) -> None:
         if not self.cfg.session_path.exists():
@@ -120,6 +77,11 @@ class BaleUserbotAdapter:
             dispatcher=dp,
             session_file=str(self.cfg.session_path),
         )
+        try:
+            me = await self._client.get_me()
+            self._account_user_id = str(getattr(me, "id", "") or "")
+        except Exception:
+            logger.exception("could not load account id for inbox store")
         logger.info(
             "Bale userbot connecting (session=%s, observe_only=%s)",
             self.cfg.session_path,
@@ -163,6 +125,16 @@ class BaleUserbotAdapter:
             "Bale observed msg chat=%s sender=%s len=%d",
             chat_id, sender, len(text),
         )
+
+        direction = (
+            "out"
+            if self._account_user_id and norm["sender_id"] == self._account_user_id
+            else "in"
+        )
+        try:
+            self._store.upsert_message(norm, direction=direction)
+        except Exception:
+            logger.exception("failed to persist message to support inbox store")
 
         # Hand off to kb.learn for fact extraction. Raw text is never written.
         if self._fact_writer is None:

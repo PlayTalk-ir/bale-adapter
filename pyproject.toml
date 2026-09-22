@@ -1,0 +1,32 @@
+[project]
+name = "bale-adapter"
+version = "0.1.0"
+description = "PlayTalk Bale userbot adapter for support AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiobale-py>=0.3.8",
+    "pydantic",
+    "aiohttp",
+    "aiofiles<24",
+    "httpx",
+    "pyyaml",
+    "blackboxprotobuf",
+    "colorama",
+    "magic-filter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.uv]
+package = false

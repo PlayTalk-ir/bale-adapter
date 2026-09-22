@@ -5,6 +5,7 @@ __pycache__/
 venv/
 *.bale
 .session/
+data/
 .env
 .pytest_cache/
 .DS_Store

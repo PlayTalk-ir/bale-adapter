@@ -52,13 +52,17 @@ def _ensure_session_dir() -> None:
     os.chmod(SESSION_PATH.parent, 0o700)
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from bale_platform.phone import normalize_phone_int as _normalize_phone  # noqa: E402
+
+
 def _prompt_phone() -> int:
-    raw = input("Bale phone number (e.g. +989121234567 or 98XXXXXXXXXX): ").strip()
-    digits = raw.replace("+", "").replace(" ", "").replace("-", "")
-    if not digits.isdigit() or len(digits) < 10:
+    raw = input("Bale phone number (e.g. +989121234567 or 09XXXXXXXXX): ").strip()
+    try:
+        return _normalize_phone(raw)
+    except ValueError:
         print("[err] invalid phone format — must be digits, optionally prefixed +")
         sys.exit(1)
-    return int(digits)
 
 
 def _prompt_otp() -> str:
