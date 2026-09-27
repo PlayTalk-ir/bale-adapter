@@ -18,6 +18,19 @@ def test_looks_like_phone_for_09():
 
 
 @pytest.mark.asyncio
+async def test_resolve_username_uses_search_username_user_field(tmp_path):
+    client = FakeBaleClient()
+    client.usernames["playtalk"] = 888
+    store = OutboxStore(tmp_path / "o.sqlite")
+    resolver = RecipientResolver(client, store, phone_pepper="x")
+
+    rec, err = await resolver.resolve_username("@playtalk")
+    assert err is None
+    assert rec is not None and rec.bale_user_id == 888
+    assert client.search_username_calls == ["playtalk"]
+
+
+@pytest.mark.asyncio
 async def test_resolve_private_chat_id_calls_search_contact(tmp_path):
     client = FakeBaleClient()
     client.contacts["989924466793"] = 777

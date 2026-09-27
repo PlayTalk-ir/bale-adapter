@@ -19,7 +19,7 @@ class SendOutcome:
 
 class BaleSender(Protocol):
     async def send_private(
-        self, chat_id: int, text: str, *, random_id: Optional[int] = None
+        self, chat_id: int, text: str, *, message_id: Optional[int] = None
     ) -> SendOutcome: ...
 
 
@@ -28,18 +28,21 @@ class LiveBaleSender:
         self._client = client
 
     async def send_private(
-        self, chat_id: int, text: str, *, random_id: Optional[int] = None
+        self, chat_id: int, text: str, *, message_id: Optional[int] = None
     ) -> SendOutcome:
         kwargs: dict[str, Any] = {
             "text": text,
             "chat_id": chat_id,
             "chat_type": ChatType.PRIVATE,
         }
-        if random_id is not None:
-            kwargs["random_id"] = random_id
+        # aiobale-py 0.3.8: optional dedup/client id is `message_id`, not random_id
+        if message_id is not None:
+            kwargs["message_id"] = message_id
         try:
             msg = await self._client.send_message(**kwargs)
-            mid = getattr(msg, "message_id", None)
+            if isinstance(msg, list):
+                msg = msg[-1] if msg else None
+            mid = getattr(msg, "message_id", None) if msg is not None else None
             return SendOutcome(bale_message_id=int(mid) if mid is not None else None, dry_run=False)
         except Exception as exc:
             return SendOutcome(
@@ -52,7 +55,7 @@ class LiveBaleSender:
 
 class DryRunBaleSender:
     async def send_private(
-        self, chat_id: int, text: str, *, random_id: Optional[int] = None
+        self, chat_id: int, text: str, *, message_id: Optional[int] = None
     ) -> SendOutcome:
         digest = hashlib.sha256(f"{chat_id}:{text}".encode()).hexdigest()
         fake_id = int(digest[:12], 16) % (10**12)
@@ -61,7 +64,7 @@ class DryRunBaleSender:
 
 class ResolveOnlySender:
     async def send_private(
-        self, chat_id: int, text: str, *, random_id: Optional[int] = None
+        self, chat_id: int, text: str, *, message_id: Optional[int] = None
     ) -> SendOutcome:
         return SendOutcome(bale_message_id=None, dry_run=False)
 

@@ -110,12 +110,12 @@ class RecipientResolver:
             return None, "rate_limited"
         if not self._store.try_acquire_lookup_slot(self._lookup_min_interval, self._clock()):
             return None, "rate_limited"
-        search = getattr(self._client, "search_by_username", None) or getattr(
-            self._client, "get_user_by_username", None
-        )
-        if search is None:
+        # aiobale-py 0.3.8: Client.search_username -> ContactResponse (.user / .group)
+        search_username = getattr(self._client, "search_username", None)
+        if search_username is None:
             return None, "bale_error"
-        peer = await search(u)
+        result = await search_username(u)
+        peer = getattr(result, "user", None)
         if peer is None:
             self._store.set_peer_cache(
                 cache_key, miss=True, error_code="recipient_not_found", ttl_seconds=86400
