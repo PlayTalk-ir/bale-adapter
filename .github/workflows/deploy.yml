@@ -13,6 +13,8 @@ name: Test & Deploy bale-adapter (VPS)
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -38,6 +40,7 @@ jobs:
           pytest -q tests
 
   deploy:
+    if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-latest
     steps:
