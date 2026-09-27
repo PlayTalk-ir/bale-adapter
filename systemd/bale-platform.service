@@ -1,6 +1,6 @@
 [Unit]
 Description=Hermes Agent — Bale userbot adapter (Shape C)
-Documentation=https://github.com/ErfanPY/bale-adapter
+Documentation=https://github.com/PlayTalk-ir/bale-adapter
 After=network.target
 
 [Service]
@@ -8,6 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/bale-adapter
 EnvironmentFile=/opt/bale-adapter/.env
+EnvironmentFile=-/opt/bale-adapter/.env.secrets
 # Userbot session file is created by scripts/login.py on the VPS console.
 # The runner refuses to start if the session file is missing — it will not
 # trigger aiobale's interactive PhoneLoginCLI (which would block forever).

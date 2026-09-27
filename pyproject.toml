@@ -14,6 +14,7 @@ dependencies = [
     "blackboxprotobuf",
     "colorama",
     "magic-filter",
+    "python-ulid>=2",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,9 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.uv]
 package = false

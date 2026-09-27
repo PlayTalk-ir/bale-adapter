@@ -159,7 +159,8 @@ class TestAdapterPreflight:
             # Run the coroutine to completion — we want the guard to fire
             # inside `async def start()` before aiobale is touched.
             import asyncio
-            asyncio.run(adapter.start())
+            ev = asyncio.Event()
+            asyncio.run(adapter.start(ev))
 
 
 # ---------------------------------------------------------------------------

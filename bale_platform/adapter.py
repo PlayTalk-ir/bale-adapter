@@ -17,9 +17,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from bale_platform.api.server import ApiRuntime, run_api_server
+from bale_platform.api_config import ApiSettings
 from bale_platform.config import BaleUserbotConfig
 from bale_platform.messages import extract_text as _extract_text
 from bale_platform.messages import normalize_message as _normalize_message
+from bale_platform.outbox.store import OutboxStore
+from bale_platform.outbox.worker import OutboxWorker
+from bale_platform.resolver import RecipientResolver
+from bale_platform.sender import BaleSender, make_sender
 from bale_platform.store import DEFAULT_STORE_PATH, SupportStore
 
 logger = logging.getLogger("hermes.bale.userbot")
@@ -49,8 +55,45 @@ class BaleUserbotAdapter:
         store_path = Path(os.getenv("BALE_STORE_PATH", str(DEFAULT_STORE_PATH)))
         self._store = SupportStore(store_path)
         self._account_user_id: Optional[str] = None
+        self._api_settings = ApiSettings.from_env()
+        self._outbox: Optional[OutboxStore] = None
+        self._worker: Optional[OutboxWorker] = None
+        self._api_runner: Any = None
+        self._session_ok = False
+        self._paused_flag = self._api_settings.sending_paused
 
-    async def start(self) -> None:
+    def _sending_paused(self) -> bool:
+        env_pause = os.getenv("BALE_SENDING_PAUSED", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        return env_pause or self._paused_flag or (
+            self._outbox is not None and self._outbox.breaker_open()
+        )
+
+    def _resume_breaker(self) -> None:
+        self._paused_flag = False
+        if self._outbox:
+            self._outbox.resume_breaker()
+
+    def _get_sender(self) -> BaleSender:
+        assert self._client is not None
+        return make_sender(self._api_settings.send_mode, self._client)
+
+    def _get_resolver(self) -> RecipientResolver:
+        assert self._outbox is not None and self._client is not None
+        return RecipientResolver(
+            self._client,
+            self._outbox,
+            phone_pepper=self._api_settings.phone_pepper or "local-dev",
+            allow_contact_import=self._api_settings.allow_contact_import,
+            new_peer_max_per_day=self._api_settings.new_peer_max_per_day,
+            lookup_min_interval_s=self._api_settings.lookup_min_interval_s,
+        )
+
+    async def start(self, stop_event: asyncio.Event) -> None:
         if not self.cfg.session_path.exists():
             raise RuntimeError(
                 f"session file not found at {self.cfg.session_path} — "
@@ -59,6 +102,7 @@ class BaleUserbotAdapter:
 
         _ensure_paths(self.cfg)
         await self._ensure_fact_writer()
+        self._api_settings.validate_startup()
 
         try:
             from aiobale import Client, Dispatcher  # type: ignore[import-not-found]
@@ -83,17 +127,47 @@ class BaleUserbotAdapter:
         except Exception:
             logger.exception("could not load account id for inbox store")
         logger.info(
-            "Bale userbot connecting (session=%s, observe_only=%s)",
+            "Bale userbot connecting (session=%s, observe_only=%s, api=%s)",
             self.cfg.session_path,
             self.cfg.observe_only,
+            self._api_settings.enabled,
         )
-        # client.start() blocks while listening for updates. It raises if the
-        # session is invalid/missing (token will be None and PhoneLoginCLI will
-        # be invoked — we don't want that in the runner, hence the preflight
-        # check above).
-        await self._client.start()
+        await self._client.start(run_in_background=True)
+        self._session_ok = True
+
+        if self._api_settings.enabled:
+            self._outbox = OutboxStore(self._api_settings.outbox_path)
+            runtime = ApiRuntime(
+                self._api_settings,
+                self._outbox,
+                session_connected=lambda: self._session_ok,
+                sending_paused=self._sending_paused,
+                resume_breaker=self._resume_breaker,
+            )
+            self._api_runner = await run_api_server(
+                runtime, self._api_settings.host, self._api_settings.port
+            )
+            self._worker = OutboxWorker(
+                self._outbox,
+                self._api_settings,
+                get_client=lambda: self._client,
+                get_sender=self._get_sender,
+                get_resolver=self._get_resolver,
+                sending_paused=self._sending_paused,
+            )
+            self._worker.start()
+            logger.info("Bale HTTP API and outbox worker started")
+
+        await stop_event.wait()
 
     async def stop(self) -> None:
+        self._session_ok = False
+        if self._worker:
+            await self._worker.stop()
+        if self._api_runner:
+            await self._api_runner.cleanup()
+        if self._outbox:
+            self._outbox.close()
         if self._client is not None:
             try:
                 close = getattr(self._client, "close", None) or getattr(

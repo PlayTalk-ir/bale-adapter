@@ -67,6 +67,13 @@ source scripts/activate.sh   # or . .\scripts\activate.ps1
 pytest -q tests
 ```
 
+## HTTP API (Steach / Laravel)
+
+Optional authenticated API for queueing outbound messages from the same userbot session as the runner (no second aiobale connection). Off by default.
+
+- Contract and env vars: [docs/api.md](docs/api.md)
+- Enable on VPS: set `BALE_API_ENABLED=true` in `/opt/bale-adapter/.env`, put `BALE_ADAPTER_API_TOKENS` and `BALE_PHONE_PEPPER` in `/opt/bale-adapter/.env.secrets` (survives deploy). Bind stays on `127.0.0.1:8787` unless you front it with nginx/TLS.
+
 ---
 
 ## Repo map
@@ -74,7 +81,8 @@ pytest -q tests
 ```
 bale-adapter/
 ├── .ai/                    # AI agent docs (start here)
-├── bale_platform/          # adapter, inbox, outbound, analysis
+├── bale_platform/          # adapter, inbox, outbound, api, outbox
+├── docs/api.md             # HTTP API contract
 ├── scripts/
 │   ├── support_cli.py      # AI-facing CLI
 │   ├── install-windows.ps1 # one-liner installer

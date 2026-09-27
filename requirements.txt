@@ -10,3 +10,4 @@ pyyaml
 blackboxprotobuf
 colorama
 magic-filter
+python-ulid>=2

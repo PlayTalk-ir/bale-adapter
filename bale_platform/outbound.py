@@ -7,7 +7,9 @@ from typing import Any, List, Optional
 
 from aiobale.enums import ChatType  # type: ignore[import-untyped]
 
-from bale_platform.phone import normalize_phone_digits
+from bale_platform.api_config import ApiSettings
+from bale_platform.outbox.store import OutboxStore
+from bale_platform.resolver import RecipientResolver, resolve_private_chat_id
 from bale_platform.store import SupportStore
 
 
@@ -19,17 +21,17 @@ class SendResult:
     detail: str
 
 
-async def resolve_private_chat_id(client: Any, target: str) -> Optional[int]:
-    """Resolve phone or numeric chat id to a private chat id."""
-    target = target.strip()
-    if target.isdigit() and len(target) <= 12:
-        # Already a Bale user/chat id
-        return int(target)
-    phone = normalize_phone_digits(target)
-    peer = await client.search_contact(phone)
-    if peer is None:
-        return None
-    return int(getattr(peer, "id", 0) or 0)
+def _make_resolver(client: Any, store: Optional[OutboxStore] = None) -> RecipientResolver:
+    settings = ApiSettings.from_env()
+    ob = store or OutboxStore(settings.outbox_path)
+    return RecipientResolver(
+        client,
+        ob,
+        phone_pepper=settings.phone_pepper or "local-dev",
+        allow_contact_import=settings.allow_contact_import,
+        new_peer_max_per_day=settings.new_peer_max_per_day,
+        lookup_min_interval_s=settings.lookup_min_interval_s,
+    )
 
 
 async def send_to_targets(
@@ -39,12 +41,14 @@ async def send_to_targets(
     *,
     store: Optional[SupportStore] = None,
     dry_run: bool = False,
+    outbox_store: Optional[OutboxStore] = None,
 ) -> List[SendResult]:
     if not text.strip():
         raise ValueError("message text cannot be empty")
 
     me = await client.get_me()
     my_id = str(getattr(me, "id", ""))
+    resolver = _make_resolver(client, outbox_store)
     results: List[SendResult] = []
 
     for target in targets:
@@ -52,7 +56,7 @@ async def send_to_targets(
         if not target:
             continue
         try:
-            chat_id = await resolve_private_chat_id(client, target)
+            chat_id = await resolve_private_chat_id(client, target, resolver)
             if not chat_id:
                 results.append(
                     SendResult(target=target, chat_id=None, ok=False, detail="not found")

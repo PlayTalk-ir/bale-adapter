@@ -12,6 +12,10 @@ Replace this with the real aiobale when a stable release is back on PyPI.
 from types import SimpleNamespace
 
 
+class ChatType:
+    PRIVATE = "private"
+
+
 class _Stub:
     def __init__(self, *a, **kw):
         pass
@@ -25,3 +29,6 @@ class _Stub:
 
 Client = _Stub
 Dispatcher = _Stub
+
+# Submodule layout used by production code
+enums = SimpleNamespace(ChatType=ChatType)

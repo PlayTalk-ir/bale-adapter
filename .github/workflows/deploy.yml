@@ -28,7 +28,7 @@ jobs:
       - name: Install test deps
         run: |
           python -m pip install --quiet --upgrade pip
-          pip install --quiet httpx pyyaml pytest pytest-asyncio
+          pip install --quiet httpx pyyaml pytest pytest-asyncio python-ulid aiohttp
 
       - name: Run unit tests
         run: |
@@ -59,7 +59,7 @@ jobs:
 
             # 1) sync the repo to origin (mirror the VPS to source of truth)
             if [ ! -d /opt/bale-adapter ]; then
-              git clone https://github.com/ErfanPY/bale-adapter.git /opt/bale-adapter
+              git clone https://github.com/PlayTalk-ir/bale-adapter.git /opt/bale-adapter
             fi
             cd /opt/bale-adapter
             git fetch origin master
@@ -88,6 +88,9 @@ jobs:
               echo "PYTHONPATH=/opt/bale-adapter"
             } > /opt/bale-adapter/.env
             chmod 600 /opt/bale-adapter/.env
+            # Secrets (API tokens, phone pepper) live in a separate file — never overwritten here.
+            touch /opt/bale-adapter/.env.secrets
+            chmod 600 /opt/bale-adapter/.env.secrets
 
             # 4) (re)start the service. bootstrap.sh installs aiobale from GitHub.
             #    If no session file exists yet, runner.py will exit(2) and systemd

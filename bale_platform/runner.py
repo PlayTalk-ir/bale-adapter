@@ -48,7 +48,7 @@ async def main() -> None:
             signal.signal(sig, _shutdown)
 
     try:
-        await adapter.start()
+        await adapter.start(stop_event)
     except KeyboardInterrupt:
         logger.info("interrupted")
     except Exception:

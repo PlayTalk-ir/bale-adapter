@@ -2,3 +2,5 @@ httpx
 pyyaml
 pytest
 pytest-asyncio
+python-ulid
+aiohttp
