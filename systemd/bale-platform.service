@@ -16,7 +16,7 @@ ExecStartPre=/usr/local/bin/bale-adapter-bootstrap.sh
 ExecStart=/opt/bale-adapter/venv/bin/python -m bale_platform.runner
 Restart=always
 RestartSec=5
-TimeoutStartSec=30
+TimeoutStartSec=180
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

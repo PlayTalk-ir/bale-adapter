@@ -6,3 +6,4 @@ When `BALE_API_ENABLED=true`, the runner starts an aiohttp server and an outbox 
 - Queue DB: `BALE_OUTBOX_PATH` (WAL SQLite)
 - CLI `send` and API share `RecipientResolver` + phone cache in the outbox DB
 - Recipient lookup uses aiobale-py 0.3.8: `search_contact(phone_number)`, `search_username` → `.user`, `send_message(..., message_id=...)`
+- VPS systemd bootstrap installs `python-ulid` with the other runner deps; first start timeout is 180s.

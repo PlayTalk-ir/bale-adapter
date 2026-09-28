@@ -113,7 +113,10 @@ jobs:
             #    VPS console to create the session.
             systemctl daemon-reload
             systemctl enable bale-platform.service
-            systemctl restart bale-platform.service
+            # First bootstrap (venv + pip) can exceed a short start timeout; without
+            # a Bale session the runner exits 2 and Restart=always retries. Do not
+            # fail the workflow on that expected state.
+            systemctl restart bale-platform.service || true
 
             # 5) wait for bootstrap to land
             for i in $(seq 1 30); do

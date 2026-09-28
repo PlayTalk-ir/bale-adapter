@@ -61,7 +61,7 @@ fi
     "${VENV}/bin/pip" install --quiet ./vendor/aiobale-source.zip >/dev/null 2>&1 || \
     "${VENV}/bin/python" /opt/bale-adapter/vendor/install_aiobale.py "${VENV}/bin/pip" || \
     echo "[bootstrap] WARN: aiobale install failed — run scripts/login.py will error until fixed"
-"${VENV}/bin/pip" install --quiet 'pydantic' 'aiohttp' 'aiofiles<24' 'httpx' 'pyyaml' 'blackboxprotobuf' 'colorama' 'magic-filter' >/dev/null 2>&1 || true
+"${VENV}/bin/pip" install --quiet 'pydantic' 'aiohttp' 'aiofiles<24' 'httpx' 'pyyaml' 'blackboxprotobuf' 'colorama' 'magic-filter' 'python-ulid>=2' >/dev/null 2>&1 || true
 
 chmod +x /opt/bale-adapter/scripts/login.py 2>/dev/null || true
 
