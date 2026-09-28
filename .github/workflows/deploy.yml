@@ -1,11 +1,15 @@
 name: Test & Deploy bale-adapter (VPS)
 
 # Bale USERBOT adapter (Shape C) for the PlayTalk company Bale account.
-# Runs as a systemd service on the same VPS as nexa-backend. Same git-pull
-# + systemctl restart pattern as nexa-backend/.github/workflows/deploy.yml.
+# Staging VPS is the only deploy target. Git-pull + systemctl restart.
 #
-# Secrets (set in repo Settings → Secrets and variables):
-#   - VPS_DEPLOY_KEY: SSH private key (PEM, no passphrase)
+# Bale runs only on the staging VPS (git-pull + systemd, not Docker).
+#
+# Secrets (repo Settings → Secrets and variables → Actions):
+#   - VPS_DEPLOY_KEY: SSH private key for the staging host (no passphrase)
+# Variables:
+#   - VPS_HOST: staging VPS IPv4 (default 5.42.223.209)
+#   - VPS_PORT: SSH port (default 22; staging uses 3939)
 #
 # The Bale session file is created interactively on the VPS console by
 # scripts/login.py — this workflow NEVER handles the OTP or the JWT.
@@ -56,15 +60,16 @@ jobs:
       - name: Deploy to VPS via SSH (git pull + systemctl restart)
         env:
           VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
-          VPS_HOST: ${{ vars.VPS_HOST || '130.185.76.124' }}
+          VPS_HOST: ${{ vars.VPS_HOST || '5.42.223.209' }}
+          VPS_PORT: ${{ vars.VPS_PORT || '22' }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           echo "$VPS_DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new root@"$VPS_HOST" bash -s <<'REMOTE'
+          ssh -p "$VPS_PORT" -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new root@"$VPS_HOST" bash -s <<'REMOTE'
             set -euo pipefail
 
             # 1) sync the repo to origin (mirror the VPS to source of truth)

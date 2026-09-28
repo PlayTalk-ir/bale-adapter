@@ -3,7 +3,7 @@
 ابزار اتصال **اکانت مشترک بله پلی‌تاک** به دستیارهای AI (Cursor، Claude، Cline، Qoder).
 Support staff can send messages, read inbox, mine FAQ topics, and track per-agent unread.
 
-Bale userbot adapter (Shape C) for PlayTalk — runs on VPS `130.185.76.124` as `bale-platform.service`.
+Bale userbot adapter (Shape C) for PlayTalk — runs on staging VPS `steach-stage-vps` (`5.42.223.209`) as `bale-platform.service`.
 
 ---
 
