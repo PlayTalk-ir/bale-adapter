@@ -12,7 +12,9 @@ import signal
 import sys
 
 from bale_platform.adapter import BaleUserbotAdapter
-from bale_platform.config import BaleUserbotConfig, is_configured
+from bale_platform.api_config import ApiSettings
+from bale_platform.config import BaleUserbotConfig
+from bale_platform.session_state import session_file_ready
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,14 +25,22 @@ logger = logging.getLogger("bale.runner")
 
 
 async def main() -> None:
-    if not is_configured():
-        logger.error(
-            "No Bale session at %s — run scripts/login.py first to authenticate.",
-            BaleUserbotConfig.session_path,
-        )
-        sys.exit(2)
-
     cfg = BaleUserbotConfig.from_env()
+    api_settings = ApiSettings.from_env()
+
+    if not session_file_ready(cfg.session_path):
+        if api_settings.enabled:
+            logger.warning(
+                "No Bale session at %s — HTTP API will start; run scripts/login.py "
+                "to authenticate (session can be added without restarting).",
+                cfg.session_path,
+            )
+        else:
+            logger.error(
+                "No Bale session at %s — run scripts/login.py first to authenticate.",
+                cfg.session_path,
+            )
+            sys.exit(2)
     adapter = BaleUserbotAdapter(cfg)
 
     loop = asyncio.get_running_loop()

@@ -13,8 +13,8 @@ from bale_platform.api_config import ApiSettings
 from bale_platform.outbox.rate_limit import RateLimitConfig, SendRateLimiter
 from bale_platform.outbox.store import OutboxStore
 from bale_platform.privacy import text_log_fingerprint
-from bale_platform.resolver import RecipientResolver
-from bale_platform.sender import BaleSender, make_sender
+from bale_platform.resolver import RecipientResolver, ResolvedRecipient
+from bale_platform.sender import BaleSender
 
 logger = logging.getLogger("bale.outbox.worker")
 
@@ -28,8 +28,9 @@ class OutboxWorker:
         settings: ApiSettings,
         get_client: Callable[[], Any],
         get_sender: Callable[[], BaleSender],
-        get_resolver: Callable[[], RecipientResolver],
+        get_resolver: Callable[[], Optional[RecipientResolver]],
         *,
+        session_connected: Callable[[], bool],
         sending_paused: Callable[[], bool],
         clock: Optional[Callable[[], float]] = None,
         sleep: Optional[Callable[[float], Any]] = None,
@@ -39,6 +40,7 @@ class OutboxWorker:
         self._get_client = get_client
         self._get_sender = get_sender
         self._get_resolver = get_resolver
+        self._session_connected = session_connected
         self._sending_paused = sending_paused
         self._clock = clock or time.time
         self._sleep = sleep or asyncio.sleep
@@ -85,6 +87,14 @@ class OutboxWorker:
             await self._process_row(row)
         logger.info("outbox worker stopped")
 
+    def _requeue(self, mid: str, now: float, delay: float = 5.0) -> None:
+        self._store.update_row(
+            mid,
+            status="queued",
+            next_attempt_at=now + delay,
+            updated_at=now,
+        )
+
     async def _process_row(self, row: dict) -> None:
         mid = row["message_id"]
         now = self._clock()
@@ -92,16 +102,37 @@ class OutboxWorker:
             secret = json.loads(row["recipient_secret"] or "{}")
         except json.JSONDecodeError:
             secret = {}
+
+        connected = self._session_connected()
+        needs_network = secret.get("type") in ("phone", "username")
+        if not connected:
+            if self._settings.send_mode == "live":
+                self._requeue(mid, now)
+                return
+            if needs_network:
+                self._requeue(mid, now)
+                return
+
         resolver = self._get_resolver()
         rec = None
         err_code = None
         self._store.update_row(mid, status="resolving", updated_at=now)
         if secret.get("type") == "phone":
+            if resolver is None:
+                self._requeue(mid, now)
+                return
             rec, err_code = await resolver.resolve_phone(secret.get("phone", ""))
         elif secret.get("type") == "username":
+            if resolver is None:
+                self._requeue(mid, now)
+                return
             rec, err_code = await resolver.resolve_username(secret.get("username", ""))
         elif secret.get("type") == "bale_user_id":
-            rec, err_code = await resolver.resolve_bale_user_id(secret.get("bale_user_id", ""))
+            uid_raw = str(secret.get("bale_user_id", "")).strip()
+            if not uid_raw.isdigit():
+                err_code = "recipient_invalid"
+            else:
+                rec = ResolvedRecipient(int(uid_raw), "bale_user_id", uid_raw)
         else:
             err_code = "recipient_invalid"
 

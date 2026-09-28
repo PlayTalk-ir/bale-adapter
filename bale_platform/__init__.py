@@ -20,11 +20,9 @@ SECURITY:
 
 from .config import BaleUserbotConfig, is_configured
 from .adapter import BaleUserbotAdapter
-from .runner import main as run
 
 __all__ = [
     "BaleUserbotAdapter",
     "BaleUserbotConfig",
     "is_configured",
-    "run",
 ]

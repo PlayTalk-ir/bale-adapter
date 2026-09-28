@@ -27,6 +27,7 @@ class ApiRuntime:
         store: OutboxStore,
         *,
         session_connected: Callable[[], bool],
+        session_reason: Callable[[], str],
         sending_paused: Callable[[], bool],
         resume_breaker: Callable[[], None],
         clock: Optional[Callable[[], float]] = None,
@@ -34,6 +35,7 @@ class ApiRuntime:
         self.settings = settings
         self.store = store
         self.session_connected = session_connected
+        self.session_reason = session_reason
         self.sending_paused = sending_paused
         self.resume_breaker = resume_breaker
         self.clock = clock or time.time
@@ -87,6 +89,7 @@ class ApiRuntime:
         return web.json_response(
             {
                 "session_connected": self.session_connected(),
+                "session_reason": self.session_reason(),
                 "queue_depth": self.store.queue_depth(),
                 "paused": self.sending_paused() or self.store.breaker_open(),
                 "send_mode": self.settings.send_mode,

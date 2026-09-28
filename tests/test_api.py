@@ -39,6 +39,7 @@ async def api_client(tmp_path):
         settings,
         store,
         session_connected=lambda: True,
+        session_reason=lambda: "connected",
         sending_paused=lambda: False,
         resume_breaker=lambda: store.resume_breaker(),
     )
@@ -160,6 +161,7 @@ async def test_rate_limit_429(tmp_path):
         settings,
         store,
         session_connected=lambda: True,
+        session_reason=lambda: "connected",
         sending_paused=lambda: False,
         resume_breaker=store.resume_breaker,
     )
@@ -186,6 +188,7 @@ async def test_sending_paused_503(tmp_path):
         settings,
         store,
         session_connected=lambda: True,
+        session_reason=lambda: "connected",
         sending_paused=lambda: True,
         resume_breaker=store.resume_breaker,
     )

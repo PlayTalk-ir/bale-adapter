@@ -11,6 +11,7 @@ installed so the repo can be deployed and CI-tested before a real login.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
@@ -25,7 +26,8 @@ from bale_platform.messages import normalize_message as _normalize_message
 from bale_platform.outbox.store import OutboxStore
 from bale_platform.outbox.worker import OutboxWorker
 from bale_platform.resolver import RecipientResolver
-from bale_platform.sender import BaleSender, make_sender
+from bale_platform.sender import BaleSender, DryRunBaleSender, make_sender
+from bale_platform.session_state import session_file_ready
 from bale_platform.store import DEFAULT_STORE_PATH, SupportStore
 
 logger = logging.getLogger("hermes.bale.userbot")
@@ -60,7 +62,13 @@ class BaleUserbotAdapter:
         self._worker: Optional[OutboxWorker] = None
         self._api_runner: Any = None
         self._session_ok = False
+        self._session_reason: str = "disconnected"
         self._paused_flag = self._api_settings.sending_paused
+        self._connect_task: Optional[asyncio.Task] = None
+        self._dispatcher: Any = None
+
+    def session_reason(self) -> str:
+        return self._session_reason
 
     def _sending_paused(self) -> bool:
         env_pause = os.getenv("BALE_SENDING_PAUSED", "").strip().lower() in {
@@ -79,11 +87,15 @@ class BaleUserbotAdapter:
             self._outbox.resume_breaker()
 
     def _get_sender(self) -> BaleSender:
-        assert self._client is not None
+        if self._api_settings.send_mode == "dry_run":
+            return DryRunBaleSender()
+        if self._client is None:
+            raise RuntimeError("Bale client not connected")
         return make_sender(self._api_settings.send_mode, self._client)
 
-    def _get_resolver(self) -> RecipientResolver:
-        assert self._outbox is not None and self._client is not None
+    def _get_resolver(self) -> Optional[RecipientResolver]:
+        if self._outbox is None or self._client is None:
+            return None
         return RecipientResolver(
             self._client,
             self._outbox,
@@ -93,17 +105,32 @@ class BaleUserbotAdapter:
             lookup_min_interval_s=self._api_settings.lookup_min_interval_s,
         )
 
-    async def start(self, stop_event: asyncio.Event) -> None:
-        if not self.cfg.session_path.exists():
-            raise RuntimeError(
-                f"session file not found at {self.cfg.session_path} — "
-                "run scripts/login.py first to authenticate."
-            )
+    async def _start_api_and_worker(self) -> None:
+        self._outbox = OutboxStore(self._api_settings.outbox_path)
+        runtime = ApiRuntime(
+            self._api_settings,
+            self._outbox,
+            session_connected=lambda: self._session_ok,
+            session_reason=self.session_reason,
+            sending_paused=self._sending_paused,
+            resume_breaker=self._resume_breaker,
+        )
+        self._api_runner = await run_api_server(
+            runtime, self._api_settings.host, self._api_settings.port
+        )
+        self._worker = OutboxWorker(
+            self._outbox,
+            self._api_settings,
+            get_client=lambda: self._client,
+            get_sender=self._get_sender,
+            get_resolver=self._get_resolver,
+            session_connected=lambda: self._session_ok,
+            sending_paused=self._sending_paused,
+        )
+        self._worker.start()
+        logger.info("Bale HTTP API and outbox worker started")
 
-        _ensure_paths(self.cfg)
-        await self._ensure_fact_writer()
-        self._api_settings.validate_startup()
-
+    async def _connect_client(self) -> None:
         try:
             from aiobale import Client, Dispatcher  # type: ignore[import-not-found]
         except ImportError as exc:
@@ -114,13 +141,15 @@ class BaleUserbotAdapter:
                 "repo was taken down)."
             ) from exc
 
-        dp = Dispatcher()
-        dp.message()(self._on_message)
+        if self._dispatcher is None:
+            self._dispatcher = Dispatcher()
+            self._dispatcher.message()(self._on_message)
 
-        self._client = Client(
-            dispatcher=dp,
-            session_file=str(self.cfg.session_path),
-        )
+        if self._client is None:
+            self._client = Client(
+                dispatcher=self._dispatcher,
+                session_file=str(self.cfg.session_path),
+            )
         try:
             me = await self._client.get_me()
             self._account_user_id = str(getattr(me, "id", "") or "")
@@ -133,52 +162,89 @@ class BaleUserbotAdapter:
             self._api_settings.enabled,
         )
         await self._client.start(run_in_background=True)
-        self._session_ok = True
+
+    async def _disconnect_client(self) -> None:
+        if self._client is None:
+            return
+        try:
+            close = getattr(self._client, "close", None) or getattr(self._client, "stop", None)
+            if close is not None:
+                res = close()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception:
+            logger.exception("error closing Bale client")
+        self._client = None
+        self._session_ok = False
+
+    async def _session_connect_loop(self, stop_event: asyncio.Event) -> None:
+        backoff = self.cfg.reconnect_min_seconds
+        while not stop_event.is_set():
+            if not session_file_ready(self.cfg.session_path):
+                self._session_ok = False
+                self._session_reason = "session_file_missing"
+                await self._disconnect_client()
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 1.5, self.cfg.reconnect_max_seconds)
+                continue
+            if self._session_ok and self._client is not None:
+                await asyncio.sleep(5.0)
+                continue
+            self._session_reason = "connecting"
+            try:
+                await self._connect_client()
+                self._session_ok = True
+                self._session_reason = "connected"
+                backoff = self.cfg.reconnect_min_seconds
+                logger.info("Bale session connected")
+            except Exception as exc:
+                self._session_ok = False
+                self._session_reason = f"connect_failed: {exc}"
+                logger.warning("Bale session connect failed: %s", exc)
+                await self._disconnect_client()
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 1.5, self.cfg.reconnect_max_seconds)
+
+    async def start(self, stop_event: asyncio.Event) -> None:
+        _ensure_paths(self.cfg)
 
         if self._api_settings.enabled:
-            self._outbox = OutboxStore(self._api_settings.outbox_path)
-            runtime = ApiRuntime(
-                self._api_settings,
-                self._outbox,
-                session_connected=lambda: self._session_ok,
-                sending_paused=self._sending_paused,
-                resume_breaker=self._resume_breaker,
+            self._api_settings.validate_startup()
+            if not session_file_ready(self.cfg.session_path):
+                self._session_reason = "session_file_missing"
+            await self._ensure_fact_writer()
+            await self._start_api_and_worker()
+            self._connect_task = asyncio.create_task(
+                self._session_connect_loop(stop_event), name="bale-session-connect"
             )
-            self._api_runner = await run_api_server(
-                runtime, self._api_settings.host, self._api_settings.port
-            )
-            self._worker = OutboxWorker(
-                self._outbox,
-                self._api_settings,
-                get_client=lambda: self._client,
-                get_sender=self._get_sender,
-                get_resolver=self._get_resolver,
-                sending_paused=self._sending_paused,
-            )
-            self._worker.start()
-            logger.info("Bale HTTP API and outbox worker started")
+            await stop_event.wait()
+            return
 
+        if not session_file_ready(self.cfg.session_path):
+            raise RuntimeError(
+                f"session file not found at {self.cfg.session_path} — "
+                "run scripts/login.py first to authenticate."
+            )
+
+        await self._ensure_fact_writer()
+        await self._connect_client()
+        self._session_ok = True
+        self._session_reason = "connected"
         await stop_event.wait()
 
     async def stop(self) -> None:
         self._session_ok = False
+        if self._connect_task:
+            self._connect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._connect_task
         if self._worker:
             await self._worker.stop()
         if self._api_runner:
             await self._api_runner.cleanup()
         if self._outbox:
             self._outbox.close()
-        if self._client is not None:
-            try:
-                close = getattr(self._client, "close", None) or getattr(
-                    self._client, "stop", None
-                )
-                if close is not None:
-                    res = close()
-                    if asyncio.iscoroutine(res):
-                        await res
-            except Exception:
-                logger.exception("error closing Bale client")
+        await self._disconnect_client()
         logger.info("Bale userbot stopped")
 
     async def _on_message(self, message: Any) -> None:

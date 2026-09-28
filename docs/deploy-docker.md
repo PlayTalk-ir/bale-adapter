@@ -52,12 +52,14 @@ Run **bale-adapter** as a Compose service on the same external Docker network as
    | `BALE_ADAPTER_API_TOKENS` | Bearer token(s) for Laravel (`Authorization: Bearer …`) |
    | `BALE_PHONE_PEPPER` | Stable HMAC key for phone cache entries |
 
-6. **Build and start** (after session login below, or to verify image):
+6. **Build and start** (API comes up even before login — `/healthz` stays green; `/readyz` shows `session_connected: false` until you log in):
 
    ```bash
    docker compose build
    docker compose up -d
    ```
+
+   After `docker compose run ... login.py` writes the session to the `bale_session` volume, the runner reconnects automatically (no restart required).
 
 ## One-time Bale login (OTP)
 

@@ -41,6 +41,7 @@ async def test_worker_logs_no_plaintext(tmp_path, caplog):
         get_client=lambda: client,
         get_sender=lambda: DryRunBaleSender(),
         get_resolver=lambda: RecipientResolver(client, store, phone_pepper="p"),
+        session_connected=lambda: True,
         sending_paused=lambda: False,
         sleep=lambda s: asyncio.sleep(0),
     )

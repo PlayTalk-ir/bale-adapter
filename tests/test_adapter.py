@@ -152,6 +152,10 @@ class TestAdapterPreflight:
     def test_start_without_session_raises(self, tmp_path, monkeypatch):
         from bale_platform import config as cfg_mod
 
+        monkeypatch.delenv("BALE_API_ENABLED", raising=False)
+        monkeypatch.setenv("BALE_SESSION_PATH", str(tmp_path / "missing.bale"))
+        monkeypatch.setenv("BALE_KB_DIR", str(tmp_path / "kb"))
+        monkeypatch.setenv("BALE_LOG_FILE", str(tmp_path / "logs/userbot.log"))
         monkeypatch.setattr(cfg_mod, "SESSION_PATH", tmp_path / "missing.bale")
         cfg = BaleUserbotConfig.from_env()
         adapter = BaleUserbotAdapter(cfg)
