@@ -1,0 +1,36 @@
+# Bale adapter on the shared Laravel Docker network (no host ports).
+# Copy .env.example -> .env and .env.secrets.example -> .env.secrets first.
+# See docs/deploy-docker.md
+
+services:
+  bale-adapter:
+    build: .
+    image: bale-adapter:local
+    container_name: bale-adapter
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.secrets
+    networks:
+      - laravel
+    volumes:
+      - bale_session:/app/.session
+      - bale_data:/app/data
+      - bale_kb:/app/kb
+      - bale_logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  laravel:
+    external: true
+    name: ${LARAVEL_DOCKER_NETWORK:?set LARAVEL_DOCKER_NETWORK in .env}
+
+volumes:
+  bale_session:
+  bale_data:
+  bale_kb:
+  bale_logs:

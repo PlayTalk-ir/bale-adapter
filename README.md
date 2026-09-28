@@ -72,7 +72,8 @@ pytest -q tests
 Optional authenticated API for queueing outbound messages from the same userbot session as the runner (no second aiobale connection). Off by default.
 
 - Contract and env vars: [docs/api.md](docs/api.md)
-- Enable on VPS: set `BALE_API_ENABLED=true` in `/opt/bale-adapter/.env`, put `BALE_ADAPTER_API_TOKENS` and `BALE_PHONE_PEPPER` in `/opt/bale-adapter/.env.secrets` (survives deploy). Bind stays on `127.0.0.1:8787` unless you front it with nginx/TLS.
+- **Docker Compose** (Laravel network, no host port): [docs/deploy-docker.md](docs/deploy-docker.md)
+- **Systemd VPS**: set `BALE_API_ENABLED=true` in `/opt/bale-adapter/.env`, put `BALE_ADAPTER_API_TOKENS` and `BALE_PHONE_PEPPER` in `/opt/bale-adapter/.env.secrets` (survives deploy). Bind stays on `127.0.0.1:8787` unless you front it with nginx/TLS.
 
 ---
 

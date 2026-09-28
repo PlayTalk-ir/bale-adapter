@@ -13,3 +13,4 @@ data/
 # allow vendor zip
 !vendor/
 !vendor/*.zip
+.env.secrets

@@ -1,0 +1,12 @@
+# Runtime deps for the Docker image (PyPI aiobale-py 0.3.8).
+# The VPS systemd path may still install aiobale from vendor/git via bootstrap.sh.
+aiobale-py==0.3.8
+pydantic
+aiohttp
+aiofiles<24
+httpx
+pyyaml
+blackboxprotobuf
+colorama
+magic-filter
+python-ulid>=2

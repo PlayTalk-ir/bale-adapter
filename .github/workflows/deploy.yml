@@ -39,6 +39,13 @@ jobs:
           export PYTHONPATH="$PWD/tests:$PWD"
           pytest -q tests
 
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t bale-adapter:ci .
+
   deploy:
     if: github.event_name == 'push'
     needs: test
