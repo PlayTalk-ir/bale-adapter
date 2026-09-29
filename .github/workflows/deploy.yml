@@ -102,6 +102,7 @@ jobs:
               echo "BALE_STORE_PATH=/opt/bale-adapter/data/support_inbox.sqlite"
               echo "BALE_CONTACTS_PATH=/opt/bale-adapter/data/contacts.sqlite"
               echo "BALE_OBSERVE_ONLY=true"
+              echo "BALE_API_ENABLED=true"
               echo "PYTHONPATH=/opt/bale-adapter"
             } > /opt/bale-adapter/.env
             chmod 600 /opt/bale-adapter/.env
