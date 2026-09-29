@@ -1,0 +1,1 @@
+Our Bale support inbox now answers from Cursor: bale-adapter lets Claude, Cline or Qoder read the shared PlayTalk inbox, draft the reply and dry-run it, and a human still presses send.

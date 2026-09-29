@@ -1,0 +1,81 @@
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<title>کار در جریان — پنل بله پلی‌تاک</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="panel.css">
+<style>
+  html, body { overflow: hidden; }
+  body { width: 700px; }
+  main { margin-top: 16px; }
+  .log { min-height: 0; font-family: "JetBrains Mono", Consolas, Menlo, "Vazirmatn", monospace; font-size: 11.5px; line-height: 1.7;
+        font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  .log .ok { color: #7ee2a0; }
+  .log .dim { color: #8b96b8; }
+  #confirm { transition: none; }
+  #confirmBtn.pressed { filter: brightness(0.85); transform: scale(0.96); }
+  .fadein { opacity: 0; }
+</style></head><body>
+<header><span class="brand">پنل ادمین بله پلی‌تاک</span>
+<nav><a href="/">داشبورد</a><a href="/send" class="active">ارسال پیام</a><a href="/contacts">دفترچه</a><a href="/inbox">صندوق</a><a href="/messages">پیام‌ها</a><a href="/analysis">تحلیل</a><a href="/system">سیستم</a></nav></header>
+<main>
+  <section class="card"><h2 id="jobTitle"># پیش‌نمایش ارسال</h2>
+    <div class="muted" id="jobStatus">وضعیت: پایان یافت — 2 ثانیه</div>
+    <pre class="log" id="joblog"></pre>
+  </section>
+  <section class="card" id="confirm"><h2>تأیید و ارسال واقعی</h2>
+    <div class="muted">پیش‌نمایش فقط Resolve بود؛ با این دکمه پیام واقعاً ارسال می‌شود.</div>
+    <button type="submit" id="confirmBtn">تأیید و ارسال</button>
+  </section>
+  <div class="notice" id="sentNotice" style="opacity:0">ارسال شد — ۱ پیام به سارا م.</div>
+  <div class="muted"><a href="/">← بازگشت به داشبورد</a></div>
+</main>
+<script>
+const PREVIEW = [
+  ['dim', '# targets: 1 | book: 48 entries | DRY-RUN (nothing sent)'],
+  ['dim', '# text: لینک جدید جلسه برات ارسال شد'],
+  ['', '[OK] سارا م. -> سارا م. chat_id=100000001 — dry-run — not sent'],
+  ['ok', '# 1/1 ok (dry-run — nothing sent)'],
+];
+const REAL = [
+  ['dim', '# targets: 1 | book: 48 entries | REAL SEND'],
+  ['dim', '# text: لینک جدید جلسه برات ارسال شد'],
+  ['', '[OK] سارا م. -> سارا م. chat_id=100000001 — sent to سارا م.'],
+  ['ok', '# 1/1 ok'],
+];
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/[\u0600-\u06FF\u200C]+(?:[ .]+[\u0600-\u06FF\u200C.؟]+)*[.؟]?/g, (m) => `<bdi dir="rtl">${m}</bdi>`);
+}
+function lines(list, n) {
+  return list.slice(0, n).map(([c, s]) => `<span class="${c}">${esc(s)}</span>`).join('\n');
+}
+// state: { sent, pressed, realLines, confirmOpacity, noticeOpacity }
+window.renderPanel = function (s) {
+  const log = document.getElementById('joblog');
+  const title = document.getElementById('jobTitle');
+  const status = document.getElementById('jobStatus');
+  const confirm = document.getElementById('confirm');
+  if (!s.sent) {
+    title.textContent = '# پیش‌نمایش ارسال';
+    status.textContent = 'وضعیت: پایان یافت — 2 ثانیه';
+    log.innerHTML = lines(PREVIEW, 4);
+    confirm.style.display = '';
+    confirm.style.opacity = 1;
+  } else {
+    title.textContent = '# ارسال پیام';
+    status.textContent = s.realLines >= 4 ? 'وضعیت: پایان یافت — 1 ثانیه' : 'وضعیت: در حال اجرا…';
+    log.innerHTML = lines(REAL, s.realLines);
+    confirm.style.display = s.confirmOpacity > 0 ? '' : 'none';
+    confirm.style.opacity = s.confirmOpacity;
+  }
+  const n = document.getElementById('sentNotice');
+  n.style.opacity = s.noticeOpacity || 0;
+  n.style.transform = `translateY(${(1 - (s.noticeOpacity || 0)) * 10}px)`;
+  document.getElementById('confirmBtn').classList.toggle('pressed', !!s.pressed);
+};
+window.btnRect = function () {
+  const r = document.getElementById('confirmBtn').getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+};
+window.renderPanel({ sent: false });
+</script>
+</body></html>
