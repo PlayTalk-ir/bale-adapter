@@ -4,7 +4,13 @@ Public URL: **https://bale-adaptor.boostsho.ir** → nginx on staging VPS → `1
 
 ## 1. Cloudflare DNS (required once)
 
-In zone **boostsho.ir**:
+In zone **boostsho.ir** (or run from repo root after fixing `CLOUDFLARE_API_TOKEN` in `j:/dev/minecraft/.env.cloudflare`):
+
+```powershell
+j:\dev\minecraft\scripts\cloudflare-dns-bale-adaptor.ps1
+```
+
+Manual dashboard alternative:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
