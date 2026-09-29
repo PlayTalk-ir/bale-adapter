@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import re
 
+# Persian (۰۱۲۳…) and Arabic-Indic digits → ASCII digits.
+_DIGIT_MAP = {ord(ch): str(i) for i, ch in enumerate("۰۱۲۳۴۵۶۷۸۹")}
+_DIGIT_MAP.update({ord(ch): str(i) for i, ch in enumerate("٠١٢٣٤٥٦٧٨٩")})
+
 # Iranian mobile after normalization: 989 + 9 digits (12 total)
 _IR_MOBILE_RE = re.compile(r"^989\d{9}$")
 
 
+def to_ascii_digits(raw: str) -> str:
+    """Map Persian/Arabic-Indic digits to ASCII; leave other characters alone."""
+    return str(raw or "").translate(_DIGIT_MAP)
+
+
 def normalize_phone_digits(raw: str) -> str:
     """Normalize Iranian/local formats to Bale digits (98XXXXXXXXXX)."""
-    digits = raw.replace("+", "").replace(" ", "").replace("-", "")
+    digits = to_ascii_digits(raw).replace("+", "").replace(" ", "").replace("-", "")
     if digits.startswith("0098"):
         digits = digits[4:]
     if not digits.isdigit() or len(digits) < 10:
@@ -46,7 +55,7 @@ def try_normalize_iranian_mobile(raw: str) -> str | None:
 
 def looks_like_phone_target(target: str) -> bool:
     """Heuristic: target should be resolved via contact search, not as Bale user id."""
-    t = target.strip()
+    t = to_ascii_digits(target).strip()
     if not t:
         return False
     if t.startswith("+") or t.startswith("00"):

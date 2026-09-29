@@ -34,7 +34,7 @@ jobs:
       - name: Install test deps
         run: |
           python -m pip install --quiet --upgrade pip
-          pip install --quiet httpx pyyaml pytest pytest-asyncio python-ulid aiohttp
+          pip install --quiet httpx pyyaml pytest pytest-asyncio python-ulid aiohttp tzdata openpyxl
 
       - name: Run unit tests
         run: |
@@ -99,6 +99,8 @@ jobs:
               echo "BALE_SESSION_PATH=/opt/bale-adapter/.session/session.bale"
               echo "BALE_KB_DIR=/opt/bale-adapter/kb"
               echo "BALE_LOG_FILE=/opt/bale-adapter/logs/userbot.log"
+              echo "BALE_STORE_PATH=/opt/bale-adapter/data/support_inbox.sqlite"
+              echo "BALE_CONTACTS_PATH=/opt/bale-adapter/data/contacts.sqlite"
               echo "BALE_OBSERVE_ONLY=true"
               echo "PYTHONPATH=/opt/bale-adapter"
             } > /opt/bale-adapter/.env

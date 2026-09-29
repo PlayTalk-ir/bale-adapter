@@ -11,6 +11,7 @@
 |------|------|-----------|
 | KB facts | `kb/learned_facts.mdl` | No — regex facts only, PII blocked |
 | Inbox | `data/support_inbox.sqlite` | Yes — needed for FAQ/unread |
+| Contact book | `data/contacts.sqlite` | Names + chat ids only (no message text) |
 
 ## PII filter
 

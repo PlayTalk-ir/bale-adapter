@@ -117,6 +117,14 @@ class SupportStore:
             ).fetchone()
         return int(row["last_message_id"]) if row else 0
 
+    def agents(self) -> List[str]:
+        """Agent ids that have acked at least one chat."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT agent_id FROM agent_acks ORDER BY agent_id"
+            ).fetchall()
+        return [str(row["agent_id"]) for row in rows]
+
     def unread_for_agent(
         self, agent_id: str, *, account_user_id: Optional[str] = None
     ) -> List[StoredMessage]:

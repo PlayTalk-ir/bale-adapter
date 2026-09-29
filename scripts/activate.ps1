@@ -15,6 +15,7 @@ $env:BALE_SESSION_PATH = Join-Path $Root ".session\session.bale"
 $env:BALE_KB_DIR = Join-Path $Root "kb"
 $env:BALE_LOG_FILE = Join-Path $Root "logs\userbot.log"
 $env:BALE_STORE_PATH = Join-Path $Root "data\support_inbox.sqlite"
+$env:BALE_CONTACTS_PATH = Join-Path $Root "data\contacts.sqlite"
 $env:PYTHONPATH = $Root
 
 Write-Host "bale-adapter venv active ($Root)"
