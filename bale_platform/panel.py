@@ -50,9 +50,17 @@ class PanelState:
     """Config + per-request store factories (cheap SQLite connects)."""
 
     def __init__(
-        self, *, token: str, no_auth: bool = False, dialog_limit: int = 200
+        self,
+        *,
+        token: str,
+        password: str = "",
+        username: str = panel_auth.DEFAULT_PANEL_USER,
+        no_auth: bool = False,
+        dialog_limit: int = 200,
     ) -> None:
         self.token = token
+        self.password = password
+        self.username = username.strip() or panel_auth.DEFAULT_PANEL_USER
         self.no_auth = no_auth
         self.dialog_limit = dialog_limit
 
@@ -271,7 +279,16 @@ async def h_login_get(request: web.Request) -> web.Response:
 async def h_login_post(request: web.Request) -> web.Response:
     state: PanelState = request.app[STATE_KEY]
     form = await request.post()
-    if panel_auth.compare(state.token, str(form.get("token", ""))):
+    if not state.password and not state.no_auth:
+        return html_response(
+            ui.login_page(error="پنل پیکربندی نشده — BALE_PANEL_PASSWORD را روی سرور تنظیم کنید"),
+            status=503,
+        )
+    user = str(form.get("username", "")).strip()
+    password = str(form.get("password", ""))
+    user_ok = panel_auth.compare(state.username, user)
+    pass_ok = panel_auth.compare(state.password, password)
+    if user_ok and pass_ok:
         response = web.HTTPFound("/")
         response.set_cookie(
             panel_auth.SESSION_COOKIE,
@@ -279,10 +296,14 @@ async def h_login_post(request: web.Request) -> web.Response:
             httponly=True,
             samesite="Strict",
             path="/",
+            secure=(
+            request.secure
+            or str(request.headers.get("X-Forwarded-Proto", "")).lower() == "https"
+        ),
         )
         raise response
     await asyncio.sleep(1.0)  # slow brute force down
-    return html_response(ui.login_page(error="توکن اشتباه است"), status=401)
+    return html_response(ui.login_page(error="نام کاربری یا رمز عبور اشتباه است"), status=401)
 
 
 async def h_logout(request: web.Request) -> web.Response:
@@ -864,10 +885,26 @@ async def h_system(request: web.Request) -> web.Response:
 
 
 def build_app(
-    *, token: str, no_auth: bool = False, dialog_limit: int = 200
+    *,
+    token: str,
+    password: str = "",
+    username: str = panel_auth.DEFAULT_PANEL_USER,
+    no_auth: bool = False,
+    dialog_limit: int = 200,
 ) -> web.Application:
+    if not no_auth:
+        if not panel_auth.token_ok(token):
+            raise ValueError("BALE_PANEL_TOKEN signing secret is too short")
+        if not panel_auth.password_ok(password):
+            raise ValueError("BALE_PANEL_PASSWORD is required (min 8 chars)")
     app = web.Application(middlewares=[auth_middleware])
-    app[STATE_KEY] = PanelState(token=token, no_auth=no_auth, dialog_limit=dialog_limit)
+    app[STATE_KEY] = PanelState(
+        token=token,
+        password=password,
+        username=username,
+        no_auth=no_auth,
+        dialog_limit=dialog_limit,
+    )
     app[JOBBOX_KEY] = {"job": None, "task": None}
     app.add_routes(
         [

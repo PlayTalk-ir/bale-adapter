@@ -112,6 +112,12 @@ jobs:
             if ! grep -q '^BALE_PANEL_TOKEN=' /opt/bale-adapter/.env.secrets 2>/dev/null; then
               echo "BALE_PANEL_TOKEN=$(openssl rand -hex 24)" >> /opt/bale-adapter/.env.secrets
             fi
+            if ! grep -q '^BALE_PANEL_PASSWORD=' /opt/bale-adapter/.env.secrets 2>/dev/null; then
+              echo "BALE_PANEL_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)" >> /opt/bale-adapter/.env.secrets
+            fi
+            if ! grep -q '^BALE_PANEL_USER=' /opt/bale-adapter/.env.secrets 2>/dev/null; then
+              echo "BALE_PANEL_USER=admin" >> /opt/bale-adapter/.env.secrets
+            fi
 
             install -m 0644 systemd/bale-panel.service /etc/systemd/system/bale-panel.service
             chmod 0755 scripts/panel.py

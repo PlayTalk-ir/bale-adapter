@@ -19,6 +19,8 @@ from typing import Optional, Union
 SESSION_COOKIE = "bale_panel"
 DEFAULT_TTL_SECONDS = 7 * 24 * 3600
 MIN_TOKEN_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
+DEFAULT_PANEL_USER = "admin"
 
 
 def _sign(secret: str, message: str) -> str:
@@ -85,5 +87,10 @@ def generate_token(length: int = 32) -> str:
 
 
 def token_ok(token: str) -> bool:
-    """Reject dangerously short tokens."""
+    """Reject dangerously short signing secrets."""
     return len(str(token or "")) >= MIN_TOKEN_LENGTH
+
+
+def password_ok(password: str) -> bool:
+    """Reject dangerously short operator passwords."""
+    return len(str(password or "")) >= MIN_PASSWORD_LENGTH

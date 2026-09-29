@@ -16,7 +16,9 @@ Set automatically by `activate.ps1` / `activate.sh` for local dev.
 | `BALE_PHONE_PEPPER` | _(empty)_ | Phone cache HMAC (set in `.env.secrets` on VPS) |
 | `PYTHONIOENCODING` | `utf-8` (Windows) | Emoji in login |
 | `PYTHONPATH` | repo root | Imports |
-| `BALE_PANEL_TOKEN` | (not set) | Admin panel login; random token if empty |
+| `BALE_PANEL_TOKEN` | (not set) | Cookie/CSRF signing secret (server-only; deploy auto-generates) |
+| `BALE_PANEL_PASSWORD` | (not set) | Operator login password (required, min 8 chars) |
+| `BALE_PANEL_USER` | `admin` | Login username |
 
 Full API/outbox knobs: [docs/api.md](../../docs/api.md).
 

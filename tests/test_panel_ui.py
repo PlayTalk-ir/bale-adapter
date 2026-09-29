@@ -59,8 +59,9 @@ class TestLayoutAndForms:
         assert "<script>x</script>" not in rendered
 
     def test_login_page(self):
-        rendered = ui.login_page(error="توکن اشتباه است")
-        assert 'name="token"' in rendered and "توکن اشتباه است" in rendered
+        rendered = ui.login_page(error="نام کاربری یا رمز عبور اشتباه است")
+        assert 'name="password"' in rendered and 'name="username"' in rendered
+        assert "نام کاربری یا رمز عبور اشتباه است" in rendered
 
     def test_send_form_fields(self):
         rendered = ui.send_form(

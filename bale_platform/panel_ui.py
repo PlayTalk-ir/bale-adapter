@@ -11,6 +11,8 @@ import html
 from datetime import datetime, timezone
 from typing import Any, Iterable, List, Sequence
 
+from bale_platform import panel_auth
+
 NAV = [
     ("داشبورد", "/"),
     ("ارسال پیام", "/send"),
@@ -183,8 +185,10 @@ def login_page(*, error: str = "", notice: str = "") -> str:
         "<h2>ورود ادمین</h2>"
         f"{err_html}{notice_html}"
         '<form method="post" action="/login">'
-        '<label>توکن ادمین (BALE_PANEL_TOKEN)</label>'
-        '<input type="password" name="token" autofocus>'
+        '<label>نام کاربری</label>'
+        f'<input type="text" name="username" value="{esc(panel_auth.DEFAULT_PANEL_USER)}" autocomplete="username" autofocus>'
+        '<label>رمز عبور</label>'
+        '<input type="password" name="password" autocomplete="current-password">'
         '<button type="submit">ورود</button>'
         "</form></section>"
     )

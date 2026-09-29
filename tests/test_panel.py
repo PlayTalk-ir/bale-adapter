@@ -24,7 +24,9 @@ from bale_platform.outbound import TARGET_CHAT_ID, TARGET_NAME, TARGET_PHONE
 from bale_platform.panel import classify_target
 from bale_platform.store import SupportStore
 
-TOKEN = "test-operator-token"
+TOKEN = "test-operator-signing-secret"
+PASSWORD = "test-operator-password"
+USER = "admin"
 
 
 @pytest.fixture(autouse=True)
@@ -80,7 +82,7 @@ def fake_bale(monkeypatch):
 async def make_http(tmp_path, monkeypatch) -> TestClient:
     monkeypatch.setenv("BALE_STORE_PATH", str(tmp_path / "inbox.sqlite"))
     monkeypatch.setenv("BALE_CONTACTS_PATH", str(tmp_path / "contacts.sqlite"))
-    app = panel_mod.build_app(token=TOKEN)
+    app = panel_mod.build_app(token=TOKEN, password=PASSWORD, username=USER)
     # aiohttp refuses cookies from IP hosts unless the jar is "unsafe"
     jar = aiohttp.CookieJar(unsafe=True)
     http = TestClient(TestServer(app), cookie_jar=jar)
@@ -89,7 +91,11 @@ async def make_http(tmp_path, monkeypatch) -> TestClient:
 
 
 async def login_and_csrf(http: TestClient) -> str:
-    login = await http.post("/login", data={"token": TOKEN}, allow_redirects=False)
+    login = await http.post(
+        "/login",
+        data={"username": USER, "password": PASSWORD},
+        allow_redirects=False,
+    )
     assert login.status == 302, "login should redirect on success"
     page = await http.get("/contacts")
     match = re.search(r'name="_csrf" value="([^"]+)"', await page.text())
@@ -124,10 +130,14 @@ class TestAuth:
     async def test_wrong_token_then_correct_token(self, tmp_path, monkeypatch):
         http = await make_http(tmp_path, monkeypatch)
         try:
-            wrong = await http.post("/login", data={"token": "wrong-token"})
+            wrong = await http.post(
+                "/login", data={"username": USER, "password": "wrong-password"}
+            )
             assert wrong.status == 401
             right = await http.post(
-                "/login", data={"token": TOKEN}, allow_redirects=False
+                "/login",
+                data={"username": USER, "password": PASSWORD},
+                allow_redirects=False,
             )
             assert right.status == 302
             page = await http.get("/")
@@ -140,7 +150,9 @@ class TestAuth:
     async def test_post_without_csrf_is_rejected(self, tmp_path, monkeypatch):
         http = await make_http(tmp_path, monkeypatch)
         try:
-            await http.post("/login", data={"token": TOKEN})
+            await http.post(
+                "/login", data={"username": USER, "password": PASSWORD}
+            )
             response = await http.post(
                 "/contacts/add", data={"name": "x", "target": "1"}
             )
@@ -186,7 +198,7 @@ class TestContactBookPages:
                 allow_redirects=False,
             )
             assert response.status == 302
-            state = panel_mod.PanelState(token=TOKEN)
+            state = panel_mod.PanelState(token=TOKEN, password=PASSWORD, username=USER)
             assert state.book().get(4242).name == "علی"
         finally:
             await http.close()
