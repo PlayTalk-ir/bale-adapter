@@ -16,6 +16,7 @@ export BALE_SESSION_PATH="$_ROOT/.session/session.bale"
 export BALE_KB_DIR="$_ROOT/kb"
 export BALE_LOG_FILE="$_ROOT/logs/userbot.log"
 export BALE_STORE_PATH="$_ROOT/data/support_inbox.sqlite"
+export BALE_CONTACTS_PATH="$_ROOT/data/contacts.sqlite"
 export PYTHONPATH="$_ROOT"
 
 echo "bale-adapter venv active ($_ROOT)"

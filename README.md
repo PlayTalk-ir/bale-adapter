@@ -69,14 +69,28 @@ pytest -q tests
 
 ---
 
+## Admin panel (web UI — no terminal needed)
+
+```powershell
+python scripts\panel.py        # http://127.0.0.1:8090 — login with the printed token
+```
+
+See [.ai/setup/panel.md](.ai/setup/panel.md).
+
+---
+
 ## Repo map
 
 ```
 bale-adapter/
 ├── .ai/                    # AI agent docs (start here)
-├── bale_platform/          # adapter, inbox, outbound, analysis
+├── bale_platform/          # adapter, inbox, outbound, contacts, targets, analysis
+│   ├── contact_store.py    # local contact book (data/contacts.sqlite)
+│   ├── panel.py            # web admin panel (aiohttp)
+│   └── targets.py          # Excel/CSV/text target lists
 ├── scripts/
 │   ├── support_cli.py      # AI-facing CLI
+│   ├── panel.py            # admin panel entry point
 │   ├── install-windows.ps1 # one-liner installer
 │   └── login.py            # human-only OTP
 ├── kb/learn.py             # structured facts (no raw text)

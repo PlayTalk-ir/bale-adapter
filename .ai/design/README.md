@@ -7,6 +7,8 @@ AI-maintained implementation design. Update when code behavior changes.
 | File | Topic |
 |------|-------|
 | [cli-surface.md](cli-surface.md) | `support_cli.py` commands |
+| [panel.md](panel.md) | Web admin panel (routes, auth, jobs) |
+| [contacts.md](contacts.md) | Saved-name resolution, Excel/target parsing |
 | [inbox-store.md](inbox-store.md) | SQLite schema, per-agent unread |
 | [message-flow.md](message-flow.md) | Runner → store → KB |
 | [analysis.md](analysis.md) | Concern categories, FAQ mining |
