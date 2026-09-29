@@ -4,3 +4,5 @@ pytest
 pytest-asyncio
 python-ulid
 aiohttp
+tzdata
+openpyxl

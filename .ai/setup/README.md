@@ -6,5 +6,6 @@
 | Linux / macOS | [linux.md](linux.md) |
 | Daily workflow | [daily-workflow.md](daily-workflow.md) |
 | Env vars | [env-vars.md](env-vars.md) |
+| Admin panel (web UI) | [panel.md](panel.md) |
 
 AI agents: read setup only to guide humans; run commands via `.ai/startup.md`.

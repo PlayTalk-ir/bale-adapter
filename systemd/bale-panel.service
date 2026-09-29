@@ -1,0 +1,20 @@
+[Unit]
+Description=PlayTalk Bale admin panel (web UI)
+Documentation=https://github.com/ErfanPY/bale-adapter
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bale-adapter
+EnvironmentFile=/opt/bale-adapter/.env
+Environment=PYTHONUNBUFFERED=1
+# Operator must add BALE_PANEL_TOKEN=<random> to /opt/bale-adapter/.env.
+# Bound to loopback on purpose — reach it with an SSH tunnel:
+#   ssh -L 8090:127.0.0.1:8090 root@VPS
+ExecStart=/opt/bale-adapter/venv/bin/python scripts/panel.py --host 127.0.0.1 --port 8090
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
