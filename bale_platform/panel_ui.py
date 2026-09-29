@@ -176,11 +176,12 @@ def table(headers: Sequence[str], rows: Iterable[Sequence[Any]], *, empty: str =
 
 
 def login_page(*, error: str = "", notice: str = "") -> str:
+    err_html = f'<div class="error">{esc(error)}</div>' if error else ""
+    notice_html = f'<div class="notice">{esc(notice)}</div>' if notice else ""
     body = (
         '<section class="card" style="max-width:420px;margin:40px auto">'
         "<h2>ورود ادمین</h2>"
-        f"{'<div class=\"error\">' + esc(error) + '</div>' if error else ''}"
-        f"{'<div class=\"notice\">' + esc(notice) + '</div>' if notice else ''}"
+        f"{err_html}{notice_html}"
         '<form method="post" action="/login">'
         '<label>توکن ادمین (BALE_PANEL_TOKEN)</label>'
         '<input type="password" name="token" autofocus>'
