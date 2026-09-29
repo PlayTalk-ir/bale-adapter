@@ -106,9 +106,15 @@ jobs:
               echo "PYTHONPATH=/opt/bale-adapter"
             } > /opt/bale-adapter/.env
             chmod 600 /opt/bale-adapter/.env
-            # Secrets (API tokens, phone pepper) live in a separate file — never overwritten here.
+            # Secrets (API tokens, phone pepper, panel token) — never overwritten here.
             touch /opt/bale-adapter/.env.secrets
             chmod 600 /opt/bale-adapter/.env.secrets
+            if ! grep -q '^BALE_PANEL_TOKEN=' /opt/bale-adapter/.env.secrets 2>/dev/null; then
+              echo "BALE_PANEL_TOKEN=$(openssl rand -hex 24)" >> /opt/bale-adapter/.env.secrets
+            fi
+
+            install -m 0644 systemd/bale-panel.service /etc/systemd/system/bale-panel.service
+            chmod 0755 scripts/panel.py
 
             # 4) (re)start the service. bootstrap.sh installs aiobale from GitHub.
             #    If no session file exists yet, runner.py will exit(2) and systemd
@@ -120,6 +126,8 @@ jobs:
             # a Bale session the runner exits 2 and Restart=always retries. Do not
             # fail the workflow on that expected state.
             systemctl restart bale-platform.service || true
+            systemctl enable bale-panel.service
+            systemctl restart bale-panel.service || true
 
             # 5) wait for bootstrap to land
             for i in $(seq 1 30); do

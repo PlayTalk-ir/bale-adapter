@@ -18,16 +18,20 @@ Manual dashboard alternative:
 
 ## 2. Cloudflare SSL/TLS
 
-Until a publicly trusted or [Origin CA](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/) cert is on the VPS, set encryption mode to **Full** (not strict). After installing Origin CA or Let's Encrypt on the origin, use **Full (strict)**.
+Origin uses **Let's Encrypt** (`certbot` webroot → `/etc/letsencrypt/live/bale-adaptor.boostsho.ir/`). Set Cloudflare encryption to **Full (strict)**.
 
-Recommended: **SSL/TLS → Overview → Full (strict)** with an **Origin Certificate** (hostnames: `bale-adaptor.boostsho.ir`) installed at:
+Also enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashboard.
 
-- `/etc/nginx/ssl/bale-adaptor.boostsho.ir.crt`
-- `/etc/nginx/ssl/bale-adaptor.boostsho.ir.key`
+## 3. nginx routing (same hostname)
 
-Enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashboard.
+| Path | Upstream |
+|------|----------|
+| `/healthz`, `/readyz`, `/v1/*` | Bale HTTP API (`127.0.0.1:8787`) |
+| `/`, `/login`, `/send`, `/contacts`, … | Admin panel (`127.0.0.1:8090`) |
 
-## 3. Install nginx on the VPS
+Install configs from `deploy/nginx/` on the VPS. Ensure `bale-panel.service` is enabled (deploy workflow installs it).
+
+## 4. Install nginx on the VPS
 
 From the repo on the server (or copy files from `deploy/nginx/`):
 
