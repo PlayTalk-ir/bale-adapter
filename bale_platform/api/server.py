@@ -201,15 +201,6 @@ class ApiRuntime:
                 status=503,
                 headers={"Retry-After": "60"},
             )
-        allowed, retry = self.store.intake_allowed(
-            token, self.settings.rate_per_min, self.settings.queue_max
-        )
-        if not allowed:
-            return web.json_response(
-                {"error": {"code": "rate_limited", "message": "too many requests", "details": {}}},
-                status=429,
-                headers={"Retry-After": str(retry or 60)},
-            )
         try:
             body = await request.json()
         except json.JSONDecodeError:
@@ -221,51 +212,104 @@ class ApiRuntime:
             return web.json_response({"error": err["error"]}, status=err["status"])
         from bale_platform.outbox.store import OutboxStore as OS
 
-        phash = OS.payload_hash(norm["recipient"]["norm_key"], norm["text"])
-        existing = self.store.get_by_idempotency(norm["idempotency_key"])
+        items = norm["items"]
         now = self.clock()
-        if existing:
-            if existing["payload_hash"] != phash:
-                return self._error(
-                    "idempotency_conflict",
-                    "idempotency key reused with different payload",
-                    status=409,
+        planned_new = 0
+        replay: list[dict] = []
+        for item in items:
+            phash = OS.payload_hash(item["recipient"]["norm_key"], norm["text"])
+            existing = self.store.get_by_idempotency(item["idempotency_key"])
+            if existing:
+                if existing["payload_hash"] != phash:
+                    return self._error(
+                        "idempotency_conflict",
+                        "idempotency key reused with different payload",
+                        status=409,
+                    )
+                replay.append(
+                    {
+                        "message_id": existing["message_id"],
+                        "status": existing["status"],
+                        "idempotency_key": existing["idempotency_key"],
+                        "recipient": {
+                            "type": existing.get("recipient_type"),
+                            "masked": existing.get("recipient_masked"),
+                        },
+                    }
                 )
+            else:
+                planned_new += 1
+                item["payload_hash"] = phash
+
+        if planned_new == 0:
+            return self._messages_response(norm, replay, status=200)
+
+        allowed, retry = self.store.intake_allowed(
+            token,
+            self.settings.rate_per_min,
+            self.settings.queue_max,
+            slots=planned_new,
+        )
+        if not allowed:
+            return web.json_response(
+                {"error": {"code": "rate_limited", "message": "too many requests", "details": {}}},
+                status=429,
+                headers={"Retry-After": str(retry or 60)},
+            )
+
+        expires_at = now + norm["ttl_seconds"]
+        created: list[dict] = []
+        for item in items:
+            if "payload_hash" not in item:
+                continue
+            message_id = str(ULID())
+            rec = item["recipient"]
+            self.store.insert_message(
+                message_id=message_id,
+                idempotency_key=item["idempotency_key"],
+                payload_hash=item["payload_hash"],
+                text=norm["text"],
+                meta=norm.get("meta"),
+                recipient_type=rec["type"],
+                recipient_masked=rec["masked"],
+                recipient_secret=json.dumps(rec["secret"]),
+                expires_at=expires_at,
+                now=now,
+            )
+            logger.info(
+                "queued message_id=%s idempotency_key=%s text_len=%d",
+                message_id,
+                item["idempotency_key"],
+                len(norm["text"]),
+            )
+            created.append(
+                {
+                    "message_id": message_id,
+                    "status": "queued",
+                    "idempotency_key": item["idempotency_key"],
+                    "recipient": {"type": rec["type"], "masked": rec["masked"]},
+                }
+            )
+
+        return self._messages_response(norm, replay + created, status=202)
+
+    def _messages_response(self, norm: dict, rows: list[dict], *, status: int) -> web.Response:
+        if norm.get("multi"):
             return web.json_response(
                 {
-                    "message_id": existing["message_id"],
-                    "status": existing["status"],
-                    "idempotency_key": existing["idempotency_key"],
+                    "idempotency_key": norm["idempotency_key"],
+                    "messages": rows,
                 },
-                status=200,
+                status=status,
             )
-        message_id = str(ULID())
-        expires_at = now + norm["ttl_seconds"]
-        self.store.insert_message(
-            message_id=message_id,
-            idempotency_key=norm["idempotency_key"],
-            payload_hash=phash,
-            text=norm["text"],
-            meta=norm.get("meta"),
-            recipient_type=norm["recipient"]["type"],
-            recipient_masked=norm["recipient"]["masked"],
-            recipient_secret=json.dumps(norm["recipient"]["secret"]),
-            expires_at=expires_at,
-            now=now,
-        )
-        logger.info(
-            "queued message_id=%s idempotency_key=%s text_len=%d",
-            message_id,
-            norm["idempotency_key"],
-            len(norm["text"]),
-        )
+        row = rows[0]
         return web.json_response(
             {
-                "message_id": message_id,
-                "status": "queued",
-                "idempotency_key": norm["idempotency_key"],
+                "message_id": row["message_id"],
+                "status": row["status"],
+                "idempotency_key": row["idempotency_key"],
             },
-            status=202,
+            status=status,
         )
 
     async def get_message(self, request: web.Request) -> web.Response:

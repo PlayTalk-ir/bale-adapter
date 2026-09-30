@@ -73,14 +73,32 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
                                 {"$ref": "#/components/schemas/RecipientUserId"},
                                 {"$ref": "#/components/schemas/RecipientUsername"},
                             ],
+                            "description": "Single recipient (use this or recipients, not both)",
+                        },
+                        "recipients": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 50,
+                            "items": {
+                                "oneOf": [
+                                    {"$ref": "#/components/schemas/RecipientPhone"},
+                                    {"$ref": "#/components/schemas/RecipientUserId"},
+                                    {"$ref": "#/components/schemas/RecipientUsername"},
+                                ]
+                            },
+                            "description": "Multiple recipients; same text/meta/TTL for each",
                         },
                         "text": {"type": "string", "minLength": 1, "maxLength": 4000},
                         "idempotency_key": {
                             "type": "string",
                             "pattern": "^[A-Za-z0-9:_.-]{1,128}$",
                             "example": "rule_bale:12:34",
+                            "description": "Your stable id for this send; see API docs",
                         },
-                        "meta": {"type": "object", "description": "Optional metadata (≤2KB, not sent to Bale)"},
+                        "meta": {
+                            "type": "object",
+                            "description": "Optional caller metadata (≤2KB). Stored in outbox only; never sent to Bale.",
+                        },
                         "ttl_seconds": {
                             "type": "integer",
                             "minimum": 1,
@@ -88,7 +106,25 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
                             "description": "Default BALE_DEFAULT_TTL_S (86400), max 7 days",
                         },
                     },
-                    "required": ["recipient", "text", "idempotency_key"],
+                    "required": ["text", "idempotency_key"],
+                },
+                "PostMessageBatchResponse": {
+                    "type": "object",
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                        "messages": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "message_id": {"type": "string"},
+                                    "status": {"type": "string"},
+                                    "idempotency_key": {"type": "string"},
+                                    "recipient": {"type": "object"},
+                                },
+                            },
+                        },
+                    },
                 },
                 "PostMessageResponse": {
                     "type": "object",
@@ -207,10 +243,15 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
                     },
                     "responses": {
                         "202": {
-                            "description": "New message queued",
+                            "description": "New message queued (single recipient) or batch queued",
                             "content": {
                                 "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/PostMessageResponse"}
+                                    "schema": {
+                                        "oneOf": [
+                                            {"$ref": "#/components/schemas/PostMessageResponse"},
+                                            {"$ref": "#/components/schemas/PostMessageBatchResponse"},
+                                        ]
+                                    }
                                 }
                             },
                         },

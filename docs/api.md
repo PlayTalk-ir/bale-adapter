@@ -47,21 +47,40 @@ Auth required. Example:
 
 ## `POST /v1/messages`
 
-Queue a message for delivery.
+Queue one or more messages for delivery (same `text`, `meta`, and `ttl_seconds` for every recipient).
 
 ### Request body
+
+Single recipient:
 
 ```json
 {
   "recipient": {"phone": "09xxxxxxxxx"},
   "text": "message body",
   "idempotency_key": "rule_bale:12:34",
-  "meta": {"optional": "object"},
+  "meta": {"rule_id": 12, "campaign": "welcome"},
   "ttl_seconds": 86400
 }
 ```
 
-**Recipient** — exactly one of:
+Multiple recipients (up to 50):
+
+```json
+{
+  "recipients": [
+    {"phone": "09924466793"},
+    {"bale_user_id": "42"}
+  ],
+  "text": "message body",
+  "idempotency_key": "rule_bale:12:34",
+  "meta": {"rule_id": 12},
+  "ttl_seconds": 604800
+}
+```
+
+Use **`recipient`** or **`recipients`**, not both. Duplicate phones/user IDs in one request are rejected.
+
+**Recipient object** — exactly one of:
 
 | Field | Rules |
 |-------|--------|
@@ -71,9 +90,14 @@ Queue a message for delivery.
 
 **`text`** — 1–4000 characters.
 
-**`idempotency_key`** — opaque 1–128 chars from `[A-Za-z0-9:_.-]`.
+**`idempotency_key`** — required. A **stable id you choose** so retries do not create duplicate sends.
 
-**`meta`** — optional JSON object, ≤ 2KB stored only (never sent to Bale).
+- Single `recipient`: the key is stored as-is (e.g. `rule_bale:12:34`).
+- `recipients` array: each row gets a derived key `{idempotency_key}:{recipient}` (e.g. `rule_bale:12:34:phone_98924466793`). Look up status with `GET /v1/messages?idempotency_key=` using that per-recipient key, or the `idempotency_key` returned in the batch response.
+- Safe to retry on network errors: same key + same text + same recipient(s) → **200** with existing queue rows; same key + different text/recipient → **409** `idempotency_conflict`.
+- Format: 1–128 chars from `[A-Za-z0-9:_.-]`. Typical pattern: `rule_bale:<rule_id>:<event_id>` from Laravel.
+
+**`meta`** — optional JSON object (≤ 2KB). **Stored in the outbox SQLite only** (`meta_json`); it is **not** sent to Bale and **not** shown in `GET /v1/messages` responses today. Use it to attach caller context (rule id, user id, ticket id) for your own reconciliation or future tooling.
 
 **`ttl_seconds`** — optional; default `BALE_DEFAULT_TTL_S` (86400), max 7 days.
 
@@ -90,13 +114,29 @@ Queue a message for delivery.
 | 429 | Intake rate limit or queue full (`rate_limited`, `Retry-After`) |
 | 503 | Kill switch or circuit breaker (`sending_paused`, `Retry-After`) |
 
-Success body:
+Success body (single `recipient`):
 
 ```json
 {
   "message_id": "<ULID>",
   "status": "queued",
   "idempotency_key": "rule_bale:12:34"
+}
+```
+
+Success body (`recipients` array, **202** or **200** on replay):
+
+```json
+{
+  "idempotency_key": "rule_bale:12:34",
+  "messages": [
+    {
+      "message_id": "<ULID>",
+      "status": "queued",
+      "idempotency_key": "rule_bale:12:34:phone_98924466793",
+      "recipient": {"type": "phone", "masked": "98912***6793"}
+    }
+  ]
 }
 ```
 

@@ -112,6 +112,46 @@ async def test_openapi_json(api_client):
 
 
 @pytest.mark.asyncio
+async def test_multiple_recipients_batch(api_client):
+    client, store, _ = api_client
+    payload = {
+        "recipients": [
+            {"bale_user_id": "10"},
+            {"bale_user_id": "11"},
+        ],
+        "text": "broadcast",
+        "idempotency_key": "batch:1",
+    }
+    r1 = await client.post("/v1/messages", headers=auth_headers(), json=payload)
+    assert r1.status == 202
+    body = await r1.json()
+    assert body["idempotency_key"] == "batch:1"
+    assert len(body["messages"]) == 2
+    keys = {m["idempotency_key"] for m in body["messages"]}
+    assert "batch:1:uid_10" in keys
+    assert "batch:1:uid_11" in keys
+    r2 = await client.post("/v1/messages", headers=auth_headers(), json=payload)
+    assert r2.status == 200
+    assert len((await r2.json())["messages"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_recipient_and_recipients_both_422(api_client):
+    client, _, _ = api_client
+    resp = await client.post(
+        "/v1/messages",
+        headers=auth_headers(),
+        json={
+            "recipient": {"bale_user_id": "1"},
+            "recipients": [{"bale_user_id": "2"}],
+            "text": "x",
+            "idempotency_key": "bad:1",
+        },
+    )
+    assert resp.status == 422
+
+
+@pytest.mark.asyncio
 async def test_healthz_no_auth(api_client):
     client, _, _ = api_client
     resp = await client.get("/healthz")

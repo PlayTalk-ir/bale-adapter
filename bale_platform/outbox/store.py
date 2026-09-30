@@ -121,8 +121,15 @@ class OutboxStore:
         ).fetchone()
         return int(row["c"])
 
-    def intake_allowed(self, token: str, rate_per_min: int, queue_max: int) -> Tuple[bool, Optional[int]]:
-        if self.queue_depth() >= queue_max:
+    def intake_allowed(
+        self,
+        token: str,
+        rate_per_min: int,
+        queue_max: int,
+        slots: int = 1,
+    ) -> Tuple[bool, Optional[int]]:
+        slots = max(1, int(slots))
+        if self.queue_depth() + slots > queue_max:
             return False, 60
         th = hashlib.sha256(token.encode()).hexdigest()[:16]
         bucket = int(time.time() // 60)
@@ -132,17 +139,17 @@ class OutboxStore:
                 (th, bucket),
             ).fetchone()
             count = int(row["count"]) if row else 0
-            if count >= rate_per_min:
+            if count + slots > rate_per_min:
                 return False, 60 - int(time.time() % 60) or 1
             if row:
                 self._conn.execute(
-                    "UPDATE intake_rate SET count=count+1 WHERE token_hash=? AND minute_bucket=?",
-                    (th, bucket),
+                    "UPDATE intake_rate SET count=count+? WHERE token_hash=? AND minute_bucket=?",
+                    (slots, th, bucket),
                 )
             else:
                 self._conn.execute(
-                    "INSERT INTO intake_rate (token_hash, minute_bucket, count) VALUES (?,?,1)",
-                    (th, bucket),
+                    "INSERT INTO intake_rate (token_hash, minute_bucket, count) VALUES (?,?,?)",
+                    (th, bucket, slots),
                 )
         return True, None
 
