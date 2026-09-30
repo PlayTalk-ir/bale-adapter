@@ -122,6 +122,16 @@ jobs:
             install -m 0644 systemd/bale-panel.service /etc/systemd/system/bale-panel.service
             chmod 0755 scripts/panel.py
 
+            if command -v nginx >/dev/null 2>&1; then
+              install -d /etc/nginx/snippets
+              install -m 0644 deploy/nginx/snippets/cloudflare-realip.conf /etc/nginx/snippets/ 2>/dev/null || true
+              install -m 0644 deploy/nginx/snippets/cloudflare-allow.conf /etc/nginx/snippets/ 2>/dev/null || true
+              install -m 0644 deploy/nginx/snippets/bale-proxy.conf /etc/nginx/snippets/ 2>/dev/null || true
+              install -m 0644 deploy/nginx/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-available/
+              ln -sf /etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-enabled/
+              nginx -t && systemctl reload nginx || true
+            fi
+
             # 4) (re)start the service. bootstrap.sh installs aiobale from GitHub.
             #    If no session file exists yet, runner.py will exit(2) and systemd
             #    will keep retrying — operator must run scripts/login.py on the

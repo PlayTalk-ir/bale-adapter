@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import time
@@ -25,6 +26,8 @@ def _settings(tmp_path, **overrides):
         outbox_path=tmp_path / "outbox.sqlite",
         phone_pepper="test-pepper",
         send_mode="dry_run",
+        docs_user="docs-user",
+        docs_password="docs-operator-password",
     )
     for k, v in overrides.items():
         setattr(base, k, v)
@@ -53,6 +56,37 @@ async def api_client(tmp_path):
 
 def auth_headers(token: str = "secret-token"):
     return {"Authorization": f"Bearer {token}"}
+
+
+def basic_auth_headers(user: str = "docs-user", password: str = "docs-operator-password"):
+    token = base64.b64encode(f"{user}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
+
+
+@pytest.mark.asyncio
+async def test_swagger_docs_require_auth(api_client):
+    client, _, _ = api_client
+    resp = await client.get("/docs")
+    assert resp.status == 401
+    assert resp.headers.get("WWW-Authenticate", "").startswith('Basic realm="Bale API Docs"')
+
+
+@pytest.mark.asyncio
+async def test_swagger_docs_ok_with_panel_password(api_client):
+    client, _, _ = api_client
+    resp = await client.get("/docs", headers=basic_auth_headers())
+    assert resp.status == 200
+    assert "swagger-ui" in (await resp.text()).lower()
+
+
+@pytest.mark.asyncio
+async def test_openapi_json(api_client):
+    client, _, _ = api_client
+    resp = await client.get("/openapi.json", headers=basic_auth_headers())
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["openapi"].startswith("3.")
+    assert "/v1/messages" in body["paths"]
 
 
 @pytest.mark.asyncio

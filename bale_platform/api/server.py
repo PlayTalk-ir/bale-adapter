@@ -12,9 +12,18 @@ from aiohttp import web
 from ulid import ULID
 
 from bale_platform.api.auth import extract_bearer, token_valid
+from bale_platform.api.docs_auth import (
+    docs_not_configured,
+    operator_credentials_ok,
+    parse_basic,
+    unauthorized as docs_unauthorized,
+)
+from bale_platform.api.openapi_spec import build_openapi
 from bale_platform.api.serializers import row_to_status
+from bale_platform.api.swagger_ui import SWAGGER_UI_HTML
 from bale_platform.api.validation import validate_post_body
 from bale_platform.api_config import ApiSettings
+from bale_platform import panel_auth
 from bale_platform.outbox.store import OutboxStore
 
 logger = logging.getLogger("bale.api")
@@ -47,10 +56,36 @@ class ApiRuntime:
         )
 
     def _auth(self, request: web.Request) -> Optional[str]:
-        token = extract_bearer(request.headers.get("Authorization"))
+        header = request.headers.get("Authorization")
+        if header and header.lower().startswith("basic "):
+            return None
+        token = extract_bearer(header)
         if not token or not token_valid(token, self.settings.tokens):
             return None
         return token
+
+    def _docs_auth(self, request: web.Request) -> bool:
+        if not self.settings.docs_password:
+            return False
+        if not panel_auth.password_ok(self.settings.docs_password):
+            return False
+        parsed = parse_basic(request.headers.get("Authorization"))
+        if not parsed:
+            return False
+        user, password = parsed
+        return operator_credentials_ok(
+            self.settings.docs_user,
+            self.settings.docs_password,
+            user,
+            password,
+        )
+
+    def _require_docs(self, request: web.Request) -> Optional[web.Response]:
+        if not self.settings.docs_password or not panel_auth.password_ok(self.settings.docs_password):
+            return docs_not_configured()
+        if not self._docs_auth(request):
+            return docs_unauthorized()
+        return None
 
     def create_app(self) -> web.Application:
         @web.middleware
@@ -74,6 +109,8 @@ class ApiRuntime:
         app = web.Application(middlewares=[request_id_middleware])
         app.router.add_get("/healthz", self.healthz)
         app.router.add_get("/readyz", self.readyz)
+        app.router.add_get("/docs", self.swagger_docs)
+        app.router.add_get("/openapi.json", self.openapi_json)
         app.router.add_post("/v1/messages", self.post_messages)
         app.router.add_get("/v1/messages", self.get_messages_query)
         app.router.add_get("/v1/messages/{message_id}", self.get_message)
@@ -82,6 +119,23 @@ class ApiRuntime:
 
     async def healthz(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True})
+
+    async def swagger_docs(self, request: web.Request) -> web.Response:
+        denied = self._require_docs(request)
+        if denied:
+            return denied
+        return web.Response(text=SWAGGER_UI_HTML, content_type="text/html")
+
+    async def openapi_json(self, request: web.Request) -> web.Response:
+        denied = self._require_docs(request)
+        if denied:
+            return denied
+        base = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
+        if not base and request.host:
+            scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+            base = f"{scheme}://{request.host}"
+        spec = build_openapi(base)
+        return web.json_response(spec)
 
     async def readyz(self, request: web.Request) -> web.Response:
         if not self._auth(request):

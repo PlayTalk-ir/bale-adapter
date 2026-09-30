@@ -27,6 +27,7 @@ Also enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashb
 | Path | Upstream |
 |------|----------|
 | `/healthz`, `/readyz`, `/v1/*` | Bale HTTP API (`127.0.0.1:8787`) |
+| `/docs`, `/openapi.json` | Swagger UI + OpenAPI (`127.0.0.1:8787`, Basic auth = panel password) |
 | `/`, `/login`, `/send`, `/contacts`, … | Admin panel (`127.0.0.1:8090`) |
 
 Install configs from `deploy/nginx/` on the VPS. Ensure `bale-panel.service` is enabled (deploy workflow installs it).

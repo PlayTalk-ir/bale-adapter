@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+from bale_platform import panel_auth
+
 
 def _bool(name: str, default: bool) -> bool:
     v = os.getenv(name, "")
@@ -59,6 +61,9 @@ class ApiSettings:
     quiet_hours: Optional[str] = None
     breaker_errors: int = 3
 
+    docs_user: str = panel_auth.DEFAULT_PANEL_USER
+    docs_password: str = ""
+
     @classmethod
     def from_env(cls) -> "ApiSettings":
         tokens = [s.strip() for s in os.getenv("BALE_ADAPTER_API_TOKENS", "").split(",") if s.strip()]
@@ -88,6 +93,11 @@ class ApiSettings:
             allow_contact_import=_bool("BALE_ALLOW_CONTACT_IMPORT", False),
             quiet_hours=os.getenv("BALE_QUIET_HOURS") or None,
             breaker_errors=_int("BALE_BREAKER_ERRORS", 3),
+            docs_user=(
+                os.getenv("BALE_PANEL_USER", panel_auth.DEFAULT_PANEL_USER).strip()
+                or panel_auth.DEFAULT_PANEL_USER
+            ),
+            docs_password=os.getenv("BALE_PANEL_PASSWORD", ""),
         )
 
     def validate_startup(self) -> None:

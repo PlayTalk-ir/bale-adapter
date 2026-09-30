@@ -6,6 +6,8 @@ Authenticated JSON API for queueing outbound Bale messages from the shared PlayT
 
 Default bind: `http://127.0.0.1:8787` (`BALE_API_HOST`, `BALE_API_PORT`). Expose beyond localhost via reverse proxy (nginx) with TLS; terminate auth at the adapter.
 
+**Interactive docs (Swagger UI):** `GET /docs` — HTTP Basic auth with the same operator credentials as the admin panel (`BALE_PANEL_USER`, `BALE_PANEL_PASSWORD`). OpenAPI schema at `GET /openapi.json` (same auth). On staging: **https://bale-adaptor.boostsho.ir/docs**
+
 ## Authentication
 
 All endpoints except `GET /healthz` require:
