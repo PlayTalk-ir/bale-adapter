@@ -1,41 +1,10 @@
-"""HTTP Basic auth for password-protected API docs (panel operator credentials)."""
+"""Session cookie + password gate for API docs (panel operator credentials)."""
 
 from __future__ import annotations
-
-import base64
-from typing import Optional, Tuple
 
 from aiohttp import web
 
 from bale_platform import panel_auth
-
-
-def parse_basic(header: Optional[str]) -> Optional[Tuple[str, str]]:
-    if not header:
-        return None
-    parts = header.split(None, 1)
-    if len(parts) != 2 or parts[0].lower() != "basic":
-        return None
-    try:
-        raw = base64.b64decode(parts[1].strip(), validate=True).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
-        return None
-    user, sep, password = raw.partition(":")
-    if not sep:
-        return None
-    return user, password
-
-
-def operator_credentials_ok(username: str, password: str, supplied_user: str, supplied_password: str) -> bool:
-    return panel_auth.compare(username, supplied_user) and panel_auth.compare(password, supplied_password)
-
-
-def unauthorized() -> web.Response:
-    return web.Response(
-        status=401,
-        text="Authentication required",
-        headers={"WWW-Authenticate": 'Basic realm="Bale API Docs", charset="UTF-8"'},
-    )
 
 
 def docs_not_configured() -> web.Response:
@@ -48,4 +17,48 @@ def docs_not_configured() -> web.Response:
             }
         },
         status=503,
+    )
+
+
+def docs_session_ok(signing_secret: str, request: web.Request) -> bool:
+    if not signing_secret or not panel_auth.token_ok(signing_secret):
+        return False
+    cookie = request.cookies.get(panel_auth.SESSION_COOKIE, "")
+    return panel_auth.verify_session(signing_secret, cookie)
+
+
+def docs_password_ok(configured_password: str, supplied_password: str) -> bool:
+    if not configured_password or not panel_auth.password_ok(configured_password):
+        return False
+    if not supplied_password:
+        return False
+    return panel_auth.compare(configured_password, supplied_password)
+
+
+def set_docs_session_cookie(
+    response: web.Response,
+    request: web.Request,
+    signing_secret: str,
+) -> None:
+    secure = request.secure or str(request.headers.get("X-Forwarded-Proto", "")).lower() == "https"
+    response.set_cookie(
+        panel_auth.SESSION_COOKIE,
+        panel_auth.make_session(signing_secret),
+        httponly=True,
+        samesite="Strict",
+        path="/",
+        secure=secure,
+    )
+
+
+def docs_json_unauthorized() -> web.Response:
+    return web.json_response(
+        {
+            "error": {
+                "code": "unauthorized",
+                "message": "Sign in at /v1/docs with the panel operator password",
+                "details": {},
+            }
+        },
+        status=401,
     )

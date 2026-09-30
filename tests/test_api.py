@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import os
 import time
@@ -11,6 +10,8 @@ import time
 import pytest
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
+
+from bale_platform import panel_auth
 
 from bale_platform.api.server import ApiRuntime
 from bale_platform.api_config import ApiSettings
@@ -28,6 +29,7 @@ def _settings(tmp_path, **overrides):
         send_mode="dry_run",
         docs_user="docs-user",
         docs_password="docs-operator-password",
+        docs_token="test-panel-signing-token-minlen",
     )
     for k, v in overrides.items():
         setattr(base, k, v)
@@ -58,23 +60,41 @@ def auth_headers(token: str = "secret-token"):
     return {"Authorization": f"Bearer {token}"}
 
 
-def basic_auth_headers(user: str = "docs-user", password: str = "docs-operator-password"):
-    token = base64.b64encode(f"{user}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
+def docs_cookie_headers(token: str = "test-panel-signing-token-minlen"):
+    session = panel_auth.make_session(token)
+    return {"Cookie": f"{panel_auth.SESSION_COOKIE}={session}"}
 
 
 @pytest.mark.asyncio
-async def test_swagger_docs_require_auth(api_client):
+async def test_swagger_docs_shows_password_login(api_client):
     client, _, _ = api_client
     resp = await client.get("/v1/docs")
     assert resp.status == 401
-    assert resp.headers.get("WWW-Authenticate", "").startswith('Basic realm="Bale API Docs"')
+    text = await resp.text()
+    assert 'name="password"' in text
+    assert "WWW-Authenticate" not in resp.headers
 
 
 @pytest.mark.asyncio
-async def test_swagger_docs_ok_with_panel_password(api_client):
+async def test_swagger_docs_login_and_cookie(api_client):
     client, _, _ = api_client
-    resp = await client.get("/v1/docs", headers=basic_auth_headers())
+    resp = await client.post(
+        "/v1/docs/login",
+        data={"password": "docs-operator-password"},
+        allow_redirects=False,
+    )
+    assert resp.status == 302
+    assert resp.headers["Location"] == "/v1/docs"
+    assert panel_auth.SESSION_COOKIE in resp.cookies
+    resp2 = await client.get("/v1/docs", cookies=resp.cookies)
+    assert resp2.status == 200
+    assert "swagger-ui" in (await resp2.text()).lower()
+
+
+@pytest.mark.asyncio
+async def test_swagger_docs_ok_with_panel_session(api_client):
+    client, _, _ = api_client
+    resp = await client.get("/v1/docs", headers=docs_cookie_headers())
     assert resp.status == 200
     assert "swagger-ui" in (await resp.text()).lower()
 
@@ -82,7 +102,7 @@ async def test_swagger_docs_ok_with_panel_password(api_client):
 @pytest.mark.asyncio
 async def test_openapi_json(api_client):
     client, _, _ = api_client
-    resp = await client.get("/v1/openapi.json", headers=basic_auth_headers())
+    resp = await client.get("/v1/openapi.json", headers=docs_cookie_headers())
     assert resp.status == 200
     body = await resp.json()
     assert body["openapi"].startswith("3.")

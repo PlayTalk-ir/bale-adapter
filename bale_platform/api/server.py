@@ -13,11 +13,13 @@ from ulid import ULID
 
 from bale_platform.api.auth import extract_bearer, token_valid
 from bale_platform.api.docs_auth import (
+    docs_json_unauthorized,
     docs_not_configured,
-    operator_credentials_ok,
-    parse_basic,
-    unauthorized as docs_unauthorized,
+    docs_password_ok,
+    docs_session_ok,
+    set_docs_session_cookie,
 )
+from bale_platform.api.docs_login import login_page
 from bale_platform.api.openapi_spec import build_openapi
 from bale_platform.api.serializers import row_to_status
 from bale_platform.api.swagger_ui import SWAGGER_UI_HTML
@@ -64,28 +66,26 @@ class ApiRuntime:
             return None
         return token
 
-    def _docs_auth(self, request: web.Request) -> bool:
-        if not self.settings.docs_password:
+    def _docs_allowed(self, request: web.Request) -> bool:
+        if not self.settings.docs_password or not panel_auth.password_ok(self.settings.docs_password):
             return False
-        if not panel_auth.password_ok(self.settings.docs_password):
-            return False
-        parsed = parse_basic(request.headers.get("Authorization"))
-        if not parsed:
-            return False
-        user, password = parsed
-        return operator_credentials_ok(
-            self.settings.docs_user,
-            self.settings.docs_password,
-            user,
-            password,
-        )
+        if docs_session_ok(self.settings.docs_token, request):
+            return True
+        return False
 
     def _require_docs(self, request: web.Request) -> Optional[web.Response]:
         if not self.settings.docs_password or not panel_auth.password_ok(self.settings.docs_password):
             return docs_not_configured()
-        if not self._docs_auth(request):
-            return docs_unauthorized()
+        if self._docs_allowed(request):
+            return None
         return None
+
+    def _require_docs_or_json_401(self, request: web.Request) -> Optional[web.Response]:
+        if not self.settings.docs_password or not panel_auth.password_ok(self.settings.docs_password):
+            return docs_not_configured()
+        if self._docs_allowed(request):
+            return None
+        return docs_json_unauthorized()
 
     def create_app(self) -> web.Application:
         @web.middleware
@@ -110,6 +110,7 @@ class ApiRuntime:
         app.router.add_get("/healthz", self.healthz)
         app.router.add_get("/readyz", self.readyz)
         app.router.add_get("/v1/docs", self.swagger_docs)
+        app.router.add_post("/v1/docs/login", self.swagger_docs_login)
         app.router.add_get("/v1/openapi.json", self.openapi_json)
         app.router.add_post("/v1/messages", self.post_messages)
         app.router.add_get("/v1/messages", self.get_messages_query)
@@ -121,13 +122,37 @@ class ApiRuntime:
         return web.json_response({"ok": True})
 
     async def swagger_docs(self, request: web.Request) -> web.Response:
-        denied = self._require_docs(request)
-        if denied:
-            return denied
+        blocked = self._require_docs(request)
+        if blocked:
+            return blocked
+        if not self._docs_allowed(request):
+            return web.Response(text=login_page(), content_type="text/html", status=401)
         return web.Response(text=SWAGGER_UI_HTML, content_type="text/html")
 
+    async def swagger_docs_login(self, request: web.Request) -> web.Response:
+        blocked = self._require_docs(request)
+        if blocked:
+            return blocked
+        if not panel_auth.token_ok(self.settings.docs_token):
+            return web.Response(
+                text=login_page("Docs login is not configured (BALE_PANEL_TOKEN missing on server)."),
+                content_type="text/html",
+                status=503,
+            )
+        form = await request.post()
+        password = str(form.get("password", ""))
+        if not docs_password_ok(self.settings.docs_password, password):
+            return web.Response(
+                text=login_page("Incorrect password."),
+                content_type="text/html",
+                status=401,
+            )
+        response = web.HTTPFound("/v1/docs")
+        set_docs_session_cookie(response, request, self.settings.docs_token)
+        raise response
+
     async def openapi_json(self, request: web.Request) -> web.Response:
-        denied = self._require_docs(request)
+        denied = self._require_docs_or_json_401(request)
         if denied:
             return denied
         base = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")

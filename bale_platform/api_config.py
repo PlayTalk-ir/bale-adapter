@@ -63,6 +63,7 @@ class ApiSettings:
 
     docs_user: str = panel_auth.DEFAULT_PANEL_USER
     docs_password: str = ""
+    docs_token: str = ""
 
     @classmethod
     def from_env(cls) -> "ApiSettings":
@@ -98,6 +99,7 @@ class ApiSettings:
                 or panel_auth.DEFAULT_PANEL_USER
             ),
             docs_password=os.getenv("BALE_PANEL_PASSWORD", ""),
+            docs_token=os.getenv("BALE_PANEL_TOKEN", ""),
         )
 
     def validate_startup(self) -> None:
