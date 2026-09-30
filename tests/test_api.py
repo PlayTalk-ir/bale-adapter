@@ -71,7 +71,9 @@ async def test_swagger_docs_shows_password_login(api_client):
     resp = await client.get("/v1/docs")
     assert resp.status == 401
     text = await resp.text()
+    assert 'name="username"' in text
     assert 'name="password"' in text
+    assert 'value="docs-user"' in text
     assert "WWW-Authenticate" not in resp.headers
 
 
@@ -80,7 +82,7 @@ async def test_swagger_docs_login_and_cookie(api_client):
     client, _, _ = api_client
     resp = await client.post(
         "/v1/docs/login",
-        data={"password": "docs-operator-password"},
+        data={"username": "docs-user", "password": "docs-operator-password"},
         allow_redirects=False,
     )
     assert resp.status == 302

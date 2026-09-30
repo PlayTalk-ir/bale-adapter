@@ -27,12 +27,19 @@ def docs_session_ok(signing_secret: str, request: web.Request) -> bool:
     return panel_auth.verify_session(signing_secret, cookie)
 
 
-def docs_password_ok(configured_password: str, supplied_password: str) -> bool:
+def docs_operator_ok(
+    configured_user: str,
+    configured_password: str,
+    supplied_user: str,
+    supplied_password: str,
+) -> bool:
     if not configured_password or not panel_auth.password_ok(configured_password):
         return False
-    if not supplied_password:
+    if not supplied_user or not supplied_password:
         return False
-    return panel_auth.compare(configured_password, supplied_password)
+    return panel_auth.compare(configured_user, supplied_user) and panel_auth.compare(
+        configured_password, supplied_password
+    )
 
 
 def set_docs_session_cookie(
@@ -56,7 +63,7 @@ def docs_json_unauthorized() -> web.Response:
         {
             "error": {
                 "code": "unauthorized",
-                "message": "Sign in at /v1/docs with the panel operator password",
+                "message": "Sign in at /v1/docs with panel username and password",
                 "details": {},
             }
         },

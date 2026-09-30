@@ -15,7 +15,7 @@ from bale_platform.api.auth import extract_bearer, token_valid
 from bale_platform.api.docs_auth import (
     docs_json_unauthorized,
     docs_not_configured,
-    docs_password_ok,
+    docs_operator_ok,
     docs_session_ok,
     set_docs_session_cookie,
 )
@@ -126,7 +126,11 @@ class ApiRuntime:
         if blocked:
             return blocked
         if not self._docs_allowed(request):
-            return web.Response(text=login_page(), content_type="text/html", status=401)
+            return web.Response(
+                text=login_page(default_username=self.settings.docs_user),
+                content_type="text/html",
+                status=401,
+            )
         return web.Response(text=SWAGGER_UI_HTML, content_type="text/html")
 
     async def swagger_docs_login(self, request: web.Request) -> web.Response:
@@ -135,15 +139,27 @@ class ApiRuntime:
             return blocked
         if not panel_auth.token_ok(self.settings.docs_token):
             return web.Response(
-                text=login_page("Docs login is not configured (BALE_PANEL_TOKEN missing on server)."),
+                text=login_page(
+                    default_username=self.settings.docs_user,
+                    error="Docs login is not configured (BALE_PANEL_TOKEN missing on server).",
+                ),
                 content_type="text/html",
                 status=503,
             )
         form = await request.post()
+        user = str(form.get("username", "")).strip()
         password = str(form.get("password", ""))
-        if not docs_password_ok(self.settings.docs_password, password):
+        if not docs_operator_ok(
+            self.settings.docs_user,
+            self.settings.docs_password,
+            user,
+            password,
+        ):
             return web.Response(
-                text=login_page("Incorrect password."),
+                text=login_page(
+                    default_username=self.settings.docs_user,
+                    error="Incorrect username or password.",
+                ),
                 content_type="text/html",
                 status=401,
             )
