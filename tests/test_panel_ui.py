@@ -51,7 +51,7 @@ class TestLayoutAndForms:
     def test_layout_nav_and_title(self):
         rendered = ui.layout("عنوان", "<p>بدنه</p>", active="/contacts")
         assert 'href="/contacts"' in rendered
-        assert "Vazirmatn-font-face.css" in rendered
+        assert "fonts.bunny.net/css?family=vazirmatn" in rendered
         assert 'class="active"' in rendered
         assert "عنوان" in rendered
         assert "<p>بدنه</p>" in rendered

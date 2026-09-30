@@ -26,8 +26,8 @@ NAV = [
 
 # Persian UI font (referenced in PAGE_CSS body { font-family: "Vazirmatn", ... }).
 PAGE_HEAD_LINKS = (
-    '<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>'
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003.0/Vazirmatn-font-face.css">'
+    '<link rel="preconnect" href="https://fonts.bunny.net">'
+    '<link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,500,600,700&display=swap">'
 )
 
 PAGE_CSS = """
