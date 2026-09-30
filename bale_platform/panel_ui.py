@@ -21,6 +21,7 @@ NAV = [
     ("پیام‌ها", "/messages"),
     ("تحلیل", "/analysis"),
     ("سیستم", "/system"),
+    ("توکن API", "/api-tokens"),
 ]
 
 PAGE_CSS = """

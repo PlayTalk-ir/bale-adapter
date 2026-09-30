@@ -36,6 +36,13 @@ from bale_platform.outbound import (
     send_to_targets,
 )
 from bale_platform.paths import contacts_path, facts_path, log_path, store_path
+from bale_platform.api_token_store import (
+    create_token,
+    env_plaintext_tokens,
+    list_records,
+    revoke_token,
+    tokens_path,
+)
 from bale_platform.phone import to_ascii_digits
 from bale_platform.session import bale_client
 from bale_platform.store import StoredMessage, SupportStore
@@ -879,6 +886,93 @@ async def h_system(request: web.Request) -> web.Response:
     )
 
 
+def _fmt_token_time(ts: float) -> str:
+    if not ts:
+        return "—"
+    return ui.fmt_ms(int(ts * 1000))
+
+
+async def h_api_tokens(request: web.Request) -> web.Response:
+    state: PanelState = request.app[STATE_KEY]
+    csrf = request.get("csrf", "")
+    jobbox = request.app[JOBBOX_KEY]
+    reveal = str(jobbox.pop("api_token_reveal", "") or "")
+    env_count = len(env_plaintext_tokens())
+    records = list_records()
+    rows = []
+    for rec in records:
+        rows.append(
+            (
+                ui.esc(rec.label or "—"),
+                ui.Raw(f'<span class="mono">{ui.esc(rec.prefix)}…</span>'),
+                _fmt_token_time(rec.created_at),
+                ui.Raw(
+                    ui.form_open("/api-tokens/revoke", csrf)
+                    + ui.hidden("token_id", rec.id)
+                    + '<button type="submit" class="danger ghost" style="margin-top:0">حذف</button></form>'
+                ),
+            )
+        )
+    reveal_card = ""
+    if reveal:
+        reveal_card = ui.card(
+            "توکن جدید — فقط یک‌بار نمایش داده می‌شود",
+            ui.Raw(
+                f'<p class="mono" style="word-break:break-all">{ui.esc(reveal)}</p>'
+                "<p class=\"muted\">در Laravel: <code>Authorization: Bearer …</code></p>"
+            ),
+            note="این مقدار ذخیره نمی‌شود؛ الان کپی کنید.",
+        )
+    create_form = (
+        ui.form_open("/api-tokens/create", csrf)
+        + '<label>برچسب (مثلاً Laravel staging)</label>'
+        + '<input type="text" name="label" maxlength="120" placeholder="Laravel">'
+        + '<button type="submit">ساخت توکن API</button></form>'
+    )
+    body = (
+        reveal_card
+        + ui.card(
+            "توکن‌های Bearer",
+            create_form
+            + ui.table(
+                ["برچسب", "پیشوند", "ساخته‌شده", ""],
+                rows,
+                empty="هنوز توکنی از پنل ساخته نشده",
+            ),
+            note=(
+                f"مسیر ذخیره: {tokens_path()} — "
+                f"توکن‌های env (BALE_ADAPTER_API_TOKENS): {env_count} مورد (از پنل حذف نمی‌شوند)."
+            ),
+        )
+    )
+    return html_response(
+        ui.layout(
+            "توکن API",
+            body,
+            active="/api-tokens",
+            csrf=csrf,
+            notice=request.query.get("notice", ""),
+            error=request.query.get("error", ""),
+        )
+    )
+
+
+async def h_api_tokens_create(request: web.Request) -> web.Response:
+    form = await form_and_csrf(request)
+    label = str(form.get("label", ""))
+    plain, _rec = create_token(label=label)
+    request.app[JOBBOX_KEY]["api_token_reveal"] = plain
+    raise web.HTTPFound("/api-tokens")
+
+
+async def h_api_tokens_revoke(request: web.Request) -> web.Response:
+    form = await form_and_csrf(request)
+    token_id = str(form.get("token_id", ""))
+    if not token_id or not revoke_token(token_id):
+        raise web.HTTPFound("/api-tokens?error=revoke_failed")
+    raise web.HTTPFound("/api-tokens?notice=revoked")
+
+
 # ---------------------------------------------------------------------------
 # app factory
 # ---------------------------------------------------------------------------
@@ -926,6 +1020,9 @@ def build_app(
             web.get("/analysis", h_analysis),
             web.post("/analysis/sync", h_analysis_sync),
             web.get("/system", h_system),
+            web.get("/api-tokens", h_api_tokens),
+            web.post("/api-tokens/create", h_api_tokens_create),
+            web.post("/api-tokens/revoke", h_api_tokens_revoke),
             web.get("/healthz", h_healthz),
         ]
     )

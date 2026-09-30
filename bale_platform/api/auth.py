@@ -16,8 +16,17 @@ def extract_bearer(header: Optional[str]) -> Optional[str]:
     return parts[1].strip()
 
 
-def token_valid(token: str, allowed: List[str]) -> bool:
-    for candidate in allowed:
+def token_valid(
+    token: str,
+    plaintext_tokens: List[str],
+    hashed_tokens: Optional[List[str]] = None,
+) -> bool:
+    for candidate in plaintext_tokens:
         if hmac.compare_digest(token, candidate):
             return True
+    if hashed_tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        for stored in hashed_tokens:
+            if hmac.compare_digest(digest, stored):
+                return True
     return False

@@ -16,7 +16,12 @@ All endpoints except `GET /healthz` require:
 Authorization: Bearer <token>
 ```
 
-Tokens are configured as a comma-separated list in `BALE_ADAPTER_API_TOKENS` (constant-time comparison; supports rotation).
+Tokens are validated on each API request. Configure them either way:
+
+1. **Admin panel** — **توکن API** (`/api-tokens`): create labeled tokens; the full secret is shown once. Stored as SHA-256 hashes in `data/api_tokens.json` (`BALE_API_TOKENS_PATH`).
+2. **Environment** — comma-separated list in `BALE_ADAPTER_API_TOKENS` (plaintext in `.env.secrets`; survives deploy, not revocable from the panel).
+
+Both sources are accepted. Constant-time comparison; supports rotation.
 
 ## Common headers
 

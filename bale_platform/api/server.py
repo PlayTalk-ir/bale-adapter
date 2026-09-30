@@ -12,6 +12,7 @@ from aiohttp import web
 from ulid import ULID
 
 from bale_platform.api.auth import extract_bearer, token_valid
+from bale_platform.api_token_store import verification_sets
 from bale_platform.api.docs_auth import (
     docs_json_unauthorized,
     docs_not_configured,
@@ -62,7 +63,10 @@ class ApiRuntime:
         if header and header.lower().startswith("basic "):
             return None
         token = extract_bearer(header)
-        if not token or not token_valid(token, self.settings.tokens):
+        plain, hashed = verification_sets()
+        if self.settings.tokens:
+            plain = plain + [t for t in self.settings.tokens if t not in plain]
+        if not token or not token_valid(token, plain, hashed):
             return None
         return token
 

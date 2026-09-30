@@ -16,6 +16,8 @@ BALE_PANEL_USER=admin
 
 Public URL: **https://bale-adaptor.boostsho.ir/login** — sign in with **username + password** (not the signing token).
 
+**API Bearer tokens:** after login, open **توکن API** (`/api-tokens`) to create tokens for Laravel. Secrets are stored hashed in `data/api_tokens.json` (override with `BALE_API_TOKENS_PATH`). The runner picks up new tokens immediately — no restart. Legacy `BALE_ADAPTER_API_TOKENS` in `.env.secrets` still works alongside panel tokens.
+
 Local dev:
 
 ```powershell

@@ -161,6 +161,27 @@ class TestAuth:
             await http.close()
 
 
+class TestApiTokens:
+    @pytest.mark.asyncio
+    async def test_create_token_from_panel(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BALE_API_TOKENS_PATH", str(tmp_path / "api_tokens.json"))
+        http = await make_http(tmp_path, monkeypatch)
+        try:
+            csrf = await login_and_csrf(http)
+            resp = await http.post(
+                "/api-tokens/create",
+                data={"label": "CI", "_csrf": csrf},
+                allow_redirects=False,
+            )
+            assert resp.status == 302
+            page = await http.get("/api-tokens")
+            text = await page.text()
+            assert "توکن جدید" in text
+            assert "CI" in text or "پیشوند" in text
+        finally:
+            await http.close()
+
+
 class TestContactBookPages:
     @pytest.mark.asyncio
     async def test_add_and_remove_contact(self, tmp_path, monkeypatch):

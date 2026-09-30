@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from bale_platform import panel_auth
+from bale_platform.api_token_store import api_auth_configured
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -103,10 +104,11 @@ class ApiSettings:
         )
 
     def validate_startup(self) -> None:
-        if self.enabled and not self.tokens:
+        if self.enabled and not api_auth_configured():
             raise RuntimeError(
-                "BALE_API_ENABLED=true but BALE_ADAPTER_API_TOKENS is empty — "
-                "refusing to start API without auth tokens."
+                "BALE_API_ENABLED=true but no API tokens are configured — "
+                "set BALE_ADAPTER_API_TOKENS or create a token in the admin panel "
+                "(/api-tokens)."
             )
         if self.send_mode not in ("live", "dry_run", "resolve_only"):
             raise ValueError(f"invalid BALE_SEND_MODE: {self.send_mode}")
