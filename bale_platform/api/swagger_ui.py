@@ -17,7 +17,7 @@ SWAGGER_UI_HTML = """<!DOCTYPE html>
 <script>
 window.onload = function () {
   window.ui = SwaggerUIBundle({
-    url: "/openapi.json",
+    url: "/v1/openapi.json",
     dom_id: "#swagger-ui",
     deepLinking: true,
     persistAuthorization: true,

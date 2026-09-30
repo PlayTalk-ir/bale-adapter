@@ -66,7 +66,7 @@ def basic_auth_headers(user: str = "docs-user", password: str = "docs-operator-p
 @pytest.mark.asyncio
 async def test_swagger_docs_require_auth(api_client):
     client, _, _ = api_client
-    resp = await client.get("/docs")
+    resp = await client.get("/v1/docs")
     assert resp.status == 401
     assert resp.headers.get("WWW-Authenticate", "").startswith('Basic realm="Bale API Docs"')
 
@@ -74,7 +74,7 @@ async def test_swagger_docs_require_auth(api_client):
 @pytest.mark.asyncio
 async def test_swagger_docs_ok_with_panel_password(api_client):
     client, _, _ = api_client
-    resp = await client.get("/docs", headers=basic_auth_headers())
+    resp = await client.get("/v1/docs", headers=basic_auth_headers())
     assert resp.status == 200
     assert "swagger-ui" in (await resp.text()).lower()
 
@@ -82,7 +82,7 @@ async def test_swagger_docs_ok_with_panel_password(api_client):
 @pytest.mark.asyncio
 async def test_openapi_json(api_client):
     client, _, _ = api_client
-    resp = await client.get("/openapi.json", headers=basic_auth_headers())
+    resp = await client.get("/v1/openapi.json", headers=basic_auth_headers())
     assert resp.status == 200
     body = await resp.json()
     assert body["openapi"].startswith("3.")
