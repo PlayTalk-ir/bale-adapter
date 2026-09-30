@@ -24,6 +24,12 @@ NAV = [
     ("توکن API", "/api-tokens"),
 ]
 
+# Persian UI font (referenced in PAGE_CSS body { font-family: "Vazirmatn", ... }).
+PAGE_HEAD_LINKS = (
+    '<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>'
+    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vazirmatn@33.003.0/Vazirmatn-font-face.css">'
+)
+
 PAGE_CSS = """
 :root { --ink:#1d2433; --muted:#6b7280; --line:#e5e7eb; --bg:#f6f7fb; --card:#fff;
         --ok:#0a7d33; --fail:#b42318; --accent:#2456d6; }
@@ -31,10 +37,14 @@ PAGE_CSS = """
 body { margin:0; font-family:"Vazirmatn",Tahoma,"Segoe UI",sans-serif; background:var(--bg);
        color:var(--ink); direction:rtl; }
 header { background:var(--card); border-bottom:1px solid var(--line); padding:10px 18px;
-         display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
-header .brand { font-weight:700; }
-nav a { text-decoration:none; color:var(--muted); padding:6px 10px; border-radius:8px; }
+         display:flex; gap:12px 18px; align-items:center; flex-wrap:wrap; }
+header .brand { font-weight:700; font-size:15px; white-space:nowrap; }
+header nav { display:flex; flex-wrap:wrap; gap:2px 4px; align-items:center; flex:1 1 auto;
+             justify-content:flex-start; }
+nav a { text-decoration:none; color:var(--muted); padding:6px 10px; border-radius:8px;
+        font-size:13px; font-weight:500; white-space:nowrap; }
 nav a:hover { background:#eef2ff; color:var(--accent); }
+nav a.active { background:#eef2ff; color:var(--accent); font-weight:600; }
 main { max-width:1100px; margin:18px auto; padding:0 16px; display:grid; gap:16px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
 .card h2 { margin:0 0 10px; font-size:15px; color:var(--muted); font-weight:600; }
@@ -133,6 +143,7 @@ def layout(
         '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{esc(title)} — پنل بله پلی‌تاک</title>"
+        f"{PAGE_HEAD_LINKS}"
         f"<style>{PAGE_CSS}</style></head><body>"
         '<header><span class="brand">پنل ادمین بله پلی‌تاک</span>'
         f"<nav>{nav}</nav></header>"
