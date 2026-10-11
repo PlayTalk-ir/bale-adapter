@@ -24,6 +24,8 @@ class StoredMessage:
     timestamp: str
     date_ms: int
     direction: str  # "in" | "out"
+    seq: int = 0
+    kind: str = "text"
 
 
 class SupportStore:
@@ -49,6 +51,8 @@ class SupportStore:
                     timestamp TEXT NOT NULL,
                     date_ms INTEGER NOT NULL,
                     direction TEXT NOT NULL DEFAULT 'in',
+                    seq INTEGER,
+                    kind TEXT NOT NULL DEFAULT 'text',
                     PRIMARY KEY (chat_id, message_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_date
@@ -70,6 +74,51 @@ class SupportStore:
                 );
                 """
             )
+            self._migrate_messages(conn)
+
+    def _migrate_messages(self, conn: sqlite3.Connection) -> None:
+        """Add the inbox cursor columns on databases created before the feed."""
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
+        if "kind" not in cols:
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'"
+            )
+        if "seq" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN seq INTEGER")
+        missing = conn.execute(
+            """
+            SELECT rowid FROM messages
+            WHERE seq IS NULL
+            ORDER BY date_ms ASC, message_id ASC
+            """
+        ).fetchall()
+        if missing:
+            start = int(
+                conn.execute("SELECT COALESCE(MAX(seq), 0) FROM messages").fetchone()[0]
+            )
+            for seq, row in enumerate(missing, start=start + 1):
+                conn.execute(
+                    "UPDATE messages SET seq = ? WHERE rowid = ?",
+                    (seq, row[0]),
+                )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq)"
+        )
+
+    @staticmethod
+    def _row_to_message(row: sqlite3.Row) -> StoredMessage:
+        keys = set(row.keys())
+        return StoredMessage(
+            chat_id=row["chat_id"],
+            message_id=row["message_id"],
+            sender_id=row["sender_id"],
+            text=row["text"],
+            timestamp=row["timestamp"],
+            date_ms=row["date_ms"],
+            direction=row["direction"],
+            seq=int(row["seq"] or 0) if "seq" in keys else 0,
+            kind=str(row["kind"] or "text") if "kind" in keys else "text",
+        )
 
     def upsert_message(self, msg: Dict[str, Any], *, direction: str = "in") -> None:
         chat_id = str(msg.get("chat_id") or "")
@@ -79,21 +128,58 @@ class SupportStore:
         text = (msg.get("text") or "").strip()
         if not text:
             return
+        kind = str(msg.get("kind") or "text")
+        sender_id = str(msg.get("sender_id") or "")
+        timestamp = str(msg.get("timestamp") or "")
+        date_ms = int(msg.get("date_ms") or 0)
+        message_id = int(message_id)
         with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT seq FROM messages WHERE chat_id = ? AND message_id = ?",
+                (chat_id, message_id),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE messages
+                       SET sender_id = ?, text = ?, timestamp = ?, date_ms = ?,
+                           direction = ?, kind = ?
+                     WHERE chat_id = ? AND message_id = ?
+                    """,
+                    (
+                        sender_id,
+                        text,
+                        timestamp,
+                        date_ms,
+                        direction,
+                        kind,
+                        chat_id,
+                        message_id,
+                    ),
+                )
+                return
+            seq = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM messages"
+                ).fetchone()[0]
+            )
             conn.execute(
                 """
-                INSERT OR REPLACE INTO messages
-                    (chat_id, message_id, sender_id, text, timestamp, date_ms, direction)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages
+                    (chat_id, message_id, sender_id, text, timestamp, date_ms,
+                     direction, seq, kind)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     chat_id,
-                    int(message_id),
-                    str(msg.get("sender_id") or ""),
+                    message_id,
+                    sender_id,
                     text,
-                    str(msg.get("timestamp") or ""),
-                    int(msg.get("date_ms") or 0),
+                    timestamp,
+                    date_ms,
                     direction,
+                    seq,
+                    kind,
                 ),
             )
 
@@ -146,17 +232,7 @@ class SupportStore:
         for row in rows:
             if account_user_id and str(row["sender_id"]) == account_user_id:
                 continue
-            out.append(
-                StoredMessage(
-                    chat_id=row["chat_id"],
-                    message_id=row["message_id"],
-                    sender_id=row["sender_id"],
-                    text=row["text"],
-                    timestamp=row["timestamp"],
-                    date_ms=row["date_ms"],
-                    direction=row["direction"],
-                )
-            )
+            out.append(self._row_to_message(row))
         return out
 
     def recent_messages(
@@ -175,18 +251,7 @@ class SupportStore:
 
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [
-            StoredMessage(
-                chat_id=r["chat_id"],
-                message_id=r["message_id"],
-                sender_id=r["sender_id"],
-                text=r["text"],
-                timestamp=r["timestamp"],
-                date_ms=r["date_ms"],
-                direction=r["direction"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_message(r) for r in rows]
 
     def latest_incoming_per_chat(self) -> Dict[str, StoredMessage]:
         with self._connect() as conn:
@@ -202,15 +267,34 @@ class SupportStore:
                 ) t ON m.chat_id = t.chat_id AND m.message_id = t.max_id
                 """
             ).fetchall()
-        return {
-            r["chat_id"]: StoredMessage(
-                chat_id=r["chat_id"],
-                message_id=r["message_id"],
-                sender_id=r["sender_id"],
-                text=r["text"],
-                timestamp=r["timestamp"],
-                date_ms=r["date_ms"],
-                direction=r["direction"],
-            )
-            for r in rows
-        }
+        return {r["chat_id"]: self._row_to_message(r) for r in rows}
+
+    def events_after(self, after: int, limit: int = 200) -> List[StoredMessage]:
+        """Messages with seq greater than ``after``, oldest cursor first."""
+        capped = max(1, min(int(limit), 1000))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM messages
+                WHERE seq > ?
+                ORDER BY seq ASC
+                LIMIT ?
+                """,
+                (int(after), capped),
+            ).fetchall()
+        return [self._row_to_message(r) for r in rows]
+
+    def history(self, chat_id: str, limit: int = 100) -> List[StoredMessage]:
+        """One chat, oldest first, capped like the WhatsApp inbox history route."""
+        capped = max(1, min(int(limit), 500))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM messages
+                WHERE chat_id = ?
+                ORDER BY date_ms DESC, seq DESC
+                LIMIT ?
+                """,
+                (str(chat_id), capped),
+            ).fetchall()
+        return [self._row_to_message(r) for r in reversed(rows)]

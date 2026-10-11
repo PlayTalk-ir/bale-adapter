@@ -15,7 +15,9 @@ from bale_platform import panel_auth
 
 from bale_platform.api.server import ApiRuntime
 from bale_platform.api_config import ApiSettings
+from bale_platform.contact_store import ContactBook
 from bale_platform.outbox.store import OutboxStore
+from bale_platform.store import SupportStore
 
 
 def _settings(tmp_path, **overrides):
@@ -109,6 +111,7 @@ async def test_openapi_json(api_client):
     body = await resp.json()
     assert body["openapi"].startswith("3.")
     assert "/v1/messages" in body["paths"]
+    assert "/v1/inbox/events" in body["paths"]
 
 
 @pytest.mark.asyncio
@@ -329,3 +332,79 @@ async def test_readyz(api_client):
     assert r.status == 200
     data = await r.json()
     assert "queue_depth" in data
+
+
+@pytest.mark.asyncio
+async def test_inbox_feed_matches_panel_contract(tmp_path):
+    outbox = OutboxStore(tmp_path / "outbox.sqlite")
+    inbox = SupportStore(tmp_path / "inbox.sqlite")
+    contacts = ContactBook(tmp_path / "contacts.sqlite")
+    contacts.add_manual("Sara", 100, username="sara")
+    inbox.upsert_message(
+        {
+            "chat_id": "100",
+            "message_id": 10,
+            "sender_id": "9",
+            "text": "hello",
+            "timestamp": "t",
+            "date_ms": 1,
+        },
+        direction="in",
+    )
+    inbox.upsert_message(
+        {
+            "chat_id": "100",
+            "message_id": 11,
+            "sender_id": "9",
+            "text": "second",
+            "timestamp": "t",
+            "date_ms": 2,
+        },
+        direction="in",
+    )
+    settings = _settings(tmp_path)
+    runtime = ApiRuntime(
+        settings,
+        outbox,
+        session_connected=lambda: True,
+        session_reason=lambda: "connected",
+        sending_paused=lambda: False,
+        resume_breaker=outbox.resume_breaker,
+        inbox=inbox,
+        contacts=contacts,
+    )
+    async with TestClient(TestServer(runtime.create_app())) as client:
+        await client.start_server()
+        denied = await client.get("/v1/inbox/events")
+        assert denied.status == 401
+
+        session = await client.get("/v1/session", headers=auth_headers())
+        assert session.status == 200
+        state = await session.json()
+        assert state["connected"] is True
+        assert state["state"] == "open"
+        assert state["qr"] is None
+
+        page = await client.get(
+            "/v1/inbox/events?after=0&limit=1", headers=auth_headers()
+        )
+        assert page.status == 200
+        body = await page.json()
+        assert body["has_more"] is True
+        assert body["events"][0]["text"] == "hello"
+        assert body["events"][0]["chat"]["name"] == "Sara"
+        assert body["events"][0]["chat"]["username"] == "sara"
+        assert body["events"][0]["kind"] == "text"
+
+        nxt = await client.get(
+            f"/v1/inbox/events?after={body['next_after']}", headers=auth_headers()
+        )
+        nxt_body = await nxt.json()
+        assert nxt_body["has_more"] is False
+        assert nxt_body["events"][0]["message_id"] == 11
+
+        history = await client.get(
+            "/v1/inbox/chats/100/history?limit=10", headers=auth_headers()
+        )
+        ids = [event["message_id"] for event in (await history.json())["events"]]
+        assert ids == [10, 11]

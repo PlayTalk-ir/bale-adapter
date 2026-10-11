@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from aiohttp import web
@@ -27,7 +28,9 @@ from bale_platform.api.swagger_ui import SWAGGER_UI_HTML
 from bale_platform.api.validation import validate_post_body
 from bale_platform.api_config import ApiSettings
 from bale_platform import panel_auth
+from bale_platform.contact_store import ContactBook
 from bale_platform.outbox.store import OutboxStore
+from bale_platform.store import StoredMessage, SupportStore
 
 logger = logging.getLogger("bale.api")
 
@@ -43,6 +46,8 @@ class ApiRuntime:
         sending_paused: Callable[[], bool],
         resume_breaker: Callable[[], None],
         clock: Optional[Callable[[], float]] = None,
+        inbox: Optional[SupportStore] = None,
+        contacts: Optional[ContactBook] = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -51,6 +56,8 @@ class ApiRuntime:
         self.sending_paused = sending_paused
         self.resume_breaker = resume_breaker
         self.clock = clock or time.time
+        self.inbox = inbox
+        self.contacts = contacts
 
     def _error(self, code: str, message: str, details: dict | None = None, status: int = 400) -> web.Response:
         return web.json_response(
@@ -116,6 +123,11 @@ class ApiRuntime:
         app.router.add_get("/v1/docs", self.swagger_docs)
         app.router.add_post("/v1/docs/login", self.swagger_docs_login)
         app.router.add_get("/v1/openapi.json", self.openapi_json)
+        app.router.add_get("/v1/session", self.get_session)
+        app.router.add_get("/v1/inbox/events", self.get_inbox_events)
+        app.router.add_get(
+            "/v1/inbox/chats/{chat_id}/history", self.get_inbox_history
+        )
         app.router.add_post("/v1/messages", self.post_messages)
         app.router.add_get("/v1/messages", self.get_messages_query)
         app.router.add_get("/v1/messages/{message_id}", self.get_message)
@@ -194,6 +206,107 @@ class ApiRuntime:
                 "send_mode": self.settings.send_mode,
             }
         )
+
+    async def get_session(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        connected = bool(self.session_connected())
+        reason = self.session_reason() or ""
+        if connected:
+            state = "open"
+            last_error = None
+        elif reason == "connecting":
+            state = "connecting"
+            last_error = None
+        elif reason == "session_file_missing":
+            state = "logged_out"
+            last_error = None
+        elif reason.startswith("connect_failed"):
+            state = "closed"
+            last_error = reason
+        else:
+            state = reason or "closed"
+            last_error = None
+        return web.json_response(
+            {
+                "state": state,
+                "connected": connected,
+                "qr": None,
+                "qr_data_url": None,
+                "me": None,
+                "last_error": last_error,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+    def _limit(self, request: web.Request, default: int, maximum: int) -> int:
+        raw = request.query.get("limit")
+        if raw is None or not str(raw).strip():
+            value = default
+        else:
+            try:
+                value = int(raw)
+            except ValueError:
+                value = default
+        if not value:
+            value = default
+        return max(1, min(value, maximum))
+
+    def _chat_blob(self, chat_id: str) -> dict:
+        name = ""
+        username = ""
+        if self.contacts is not None:
+            try:
+                entry = self.contacts.get(chat_id)
+            except (TypeError, ValueError):
+                entry = None
+            if entry is not None:
+                name = entry.name or entry.local_name or entry.profile_name or ""
+                username = entry.username or ""
+        return {"name": name, "username": username, "phone": None}
+
+    def _events_payload(self, rows: list[StoredMessage]) -> list[dict]:
+        blobs = {row.chat_id: self._chat_blob(row.chat_id) for row in rows}
+        return [
+            {
+                "seq": row.seq,
+                "chat_id": row.chat_id,
+                "message_id": row.message_id,
+                "direction": row.direction,
+                "kind": row.kind,
+                "text": row.text,
+                "date_ms": row.date_ms,
+                "sender_id": row.sender_id,
+                "chat": blobs[row.chat_id],
+            }
+            for row in rows
+        ]
+
+    async def get_inbox_events(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        raw_after = request.query.get("after")
+        try:
+            after = int(raw_after) if raw_after else 0
+        except ValueError:
+            after = 0
+        limit = self._limit(request, 200, 1000)
+        rows = self.inbox.events_after(after, limit) if self.inbox is not None else []
+        return web.json_response(
+            {
+                "events": self._events_payload(rows),
+                "next_after": rows[-1].seq if rows else after,
+                "has_more": len(rows) == limit,
+            }
+        )
+
+    async def get_inbox_history(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        chat_id = request.match_info["chat_id"]
+        limit = self._limit(request, 100, 500)
+        rows = self.inbox.history(chat_id, limit) if self.inbox is not None else []
+        return web.json_response({"events": self._events_payload(rows)})
 
     async def post_messages(self, request: web.Request) -> web.Response:
         token = self._auth(request)

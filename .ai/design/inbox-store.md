@@ -4,7 +4,7 @@ Path: `data/support_inbox.sqlite` (override: `BALE_STORE_PATH`)
 
 ## Tables
 
-**messages** — chat_id, message_id, sender_id, text, timestamp, direction (`in`|`out`)
+**messages** — chat_id, message_id, sender_id, text, timestamp, direction (`in`|`out`), seq (monotonic cursor, stable across updates), kind (default `text`)
 
 **agent_acks** — agent_id, chat_id, last_message_id, acked_at
 

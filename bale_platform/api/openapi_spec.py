@@ -22,6 +22,7 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
         "servers": [{"url": server}],
         "tags": [
             {"name": "health"},
+            {"name": "inbox"},
             {"name": "messages"},
             {"name": "admin"},
         ],
@@ -226,6 +227,61 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
                             "description": "Unauthorized",
                             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorBody"}}},
                         },
+                    },
+                }
+            },
+            "/v1/session": {
+                "get": {
+                    "tags": ["inbox"],
+                    "summary": "Userbot session state (no QR; Bale uses a phone session file)",
+                    "responses": {
+                        "200": {"description": "Session state"},
+                        "401": {"description": "Unauthorized"},
+                    },
+                }
+            },
+            "/v1/inbox/events": {
+                "get": {
+                    "tags": ["inbox"],
+                    "summary": "Inbox events after a seq cursor",
+                    "parameters": [
+                        {
+                            "name": "after",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 0},
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 200, "maximum": 1000},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "events, next_after, has_more"},
+                        "401": {"description": "Unauthorized"},
+                    },
+                }
+            },
+            "/v1/inbox/chats/{chat_id}/history": {
+                "get": {
+                    "tags": ["inbox"],
+                    "summary": "Recent messages for one chat, oldest first",
+                    "parameters": [
+                        {
+                            "name": "chat_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 100, "maximum": 500},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "events"},
+                        "401": {"description": "Unauthorized"},
                     },
                 }
             },

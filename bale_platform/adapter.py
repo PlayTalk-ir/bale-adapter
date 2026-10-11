@@ -21,6 +21,8 @@ from typing import Any, Dict, Optional
 from bale_platform.api.server import ApiRuntime, run_api_server
 from bale_platform.api_config import ApiSettings
 from bale_platform.config import BaleUserbotConfig
+from bale_platform.contact_store import ContactBook
+from bale_platform.paths import contacts_path
 from bale_platform.messages import extract_text as _extract_text
 from bale_platform.messages import normalize_message as _normalize_message
 from bale_platform.outbox.store import OutboxStore
@@ -114,6 +116,8 @@ class BaleUserbotAdapter:
             session_reason=self.session_reason,
             sending_paused=self._sending_paused,
             resume_breaker=self._resume_breaker,
+            inbox=self._store,
+            contacts=ContactBook(contacts_path()),
         )
         self._api_runner = await run_api_server(
             runtime, self._api_settings.host, self._api_settings.port

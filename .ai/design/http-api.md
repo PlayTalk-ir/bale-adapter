@@ -9,3 +9,4 @@ When `BALE_API_ENABLED=true`, the runner starts an aiohttp server and an outbox 
 - VPS systemd bootstrap installs `python-ulid` with the other runner deps; first start timeout is 180s.
 - Staging public URL (Cloudflare proxied): `https://bale-adaptor.boostsho.ir` → nginx → `127.0.0.1:8787`. Setup: [docs/nginx-cloudflare.md](../../docs/nginx-cloudflare.md).
 - Swagger UI at `/v1/docs` (panel username + password, or existing panel session cookie). OpenAPI at `/v1/openapi.json`.
+- Inbox feed for the support panel: `GET /v1/inbox/events` and `GET /v1/inbox/chats/{chat_id}/history`, read from the support inbox DB. `GET /v1/session` reports the userbot session (`qr` is always null).

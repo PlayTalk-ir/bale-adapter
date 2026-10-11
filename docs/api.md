@@ -50,6 +50,52 @@ Auth required. Example:
 }
 ```
 
+## `GET /v1/session`
+
+Auth required. Bale links with a phone session file, so `qr` and `qr_data_url` are always `null`. `state` is `open` when the userbot is connected.
+
+```json
+{
+  "state": "open",
+  "connected": true,
+  "qr": null,
+  "qr_data_url": null,
+  "me": null,
+  "last_error": null,
+  "updated_at": "2026-10-12T00:00:00+00:00"
+}
+```
+
+## `GET /v1/inbox/events`
+
+Auth required. Cursor feed of stored support-inbox messages (the route the support panel polls). Query: `after` (default `0`, exclusive seq) and `limit` (default `200`, max `1000`).
+
+```json
+{
+  "events": [
+    {
+      "seq": 1,
+      "chat_id": "100",
+      "message_id": 10,
+      "direction": "in",
+      "kind": "text",
+      "text": "hello",
+      "date_ms": 1,
+      "sender_id": "9",
+      "chat": {"name": "", "username": "", "phone": null}
+    }
+  ],
+  "next_after": 1,
+  "has_more": false
+}
+```
+
+`next_after` is the last event's `seq`, or the request `after` when the page is empty. `has_more` is true when the page is full. Re-saving an existing message keeps its `seq`.
+
+## `GET /v1/inbox/chats/{chat_id}/history`
+
+Auth required. Same event objects, oldest first. Query: `limit` (default `100`, max `500`).
+
 ## `POST /v1/messages`
 
 Queue one or more messages for delivery (same `text`, `meta`, and `ttl_seconds` for every recipient).
