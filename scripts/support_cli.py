@@ -9,6 +9,7 @@ Subcommands (for AI agents or humans):
     sync          Pull recent history into the local inbox store
     collect       Export customer messages for FAQ topic generation
     analyze       Summarize current customer concerns by category
+    faq           Match a message to a canned answer / backtest coverage (no sending)
     ack           Mark a chat handled for a specific support agent
 
 Examples:
@@ -24,6 +25,8 @@ Examples:
     python scripts/support_cli.py send --to-file names.txt --text "متن پیام"
     python scripts/support_cli.py collect --limit 100 --json
     python scripts/support_cli.py analyze
+    python scripts/support_cli.py faq --text "آدرس سرور چیه؟"
+    python scripts/support_cli.py faq --backtest --days 7 --exclude-chat 10
     python scripts/support_cli.py ack --agent sara --chat 123456 --message-id 999
 """
 
@@ -43,6 +46,7 @@ from bale_platform.analysis import analyze_concerns, collect_for_faq
 from bale_platform.config import BaleUserbotConfig
 from bale_platform.contact_store import DEFAULT_CONTACTS_PATH, ContactBook, refresh_book
 from bale_platform.contacts import ContactIndex
+from bale_platform.faq import group_bursts, match_faq
 from bale_platform.inbox import (
     account_unread_dialogs,
     agent_unread,
@@ -368,6 +372,50 @@ async def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_faq(args: argparse.Namespace) -> int:
+    if args.text:
+        m = match_faq(args.text)
+        print(json.dumps(m.__dict__, ensure_ascii=False, indent=2))
+        return 0
+    if not args.backtest:
+        print("[err] pass --text TEXT or --backtest")
+        return 2
+    import time
+    from collections import Counter
+
+    store = SupportStore(_store_path(BaleUserbotConfig.from_env()))
+    since_ms = int((time.time() - args.days * 86400) * 1000)
+    skip = {str(c) for c in args.exclude_chat}
+    msgs = [
+        m
+        for m in store.recent_messages(limit=100000, since_ms=since_ms)
+        if m.chat_id not in skip
+    ]
+    bursts = group_bursts(msgs)
+    results = [(chat, text, match_faq(text)) for chat, _ts, text in bursts]
+    actions = Counter(r.action for _, _, r in results)
+    total = len(results)
+    print(f"customer bursts: {total} (last {args.days} days, {len(msgs)} messages)")
+    for action in ("suggest", "escalate", "no_reply", "none"):
+        n = actions.get(action, 0)
+        print(f"  {action:9s} {n:4d}  {n * 100 // max(total, 1):3d}%")
+    by_entry = Counter(r.entry_id for _, _, r in results if r.action == "suggest")
+    print("per entry:")
+    for entry_id, n in by_entry.most_common():
+        print(f"  {entry_id:22s} {n}")
+    if args.show:
+        which = args.show
+        print(f"--- samples: {which}")
+        shown = 0
+        for chat, text, r in results:
+            if r.action == which or r.entry_id == which:
+                print(f"[{r.entry_id}] chat={chat}: {text[:140]!r}")
+                shown += 1
+                if shown >= args.samples:
+                    break
+    return 0
+
+
 async def cmd_ack(args: argparse.Namespace) -> int:
     store = SupportStore(_store_path(BaleUserbotConfig.from_env()))
     store.ack_chat(args.agent, str(args.chat), args.message_id)
@@ -482,6 +530,14 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_p.add_argument("--history", type=int, default=30)
     analyze_p.add_argument("--all-messages", action="store_true")
 
+    faq_p = sub.add_parser("faq", help="match message to canned answer / backtest")
+    faq_p.add_argument("--text", help="one message to match")
+    faq_p.add_argument("--backtest", action="store_true")
+    faq_p.add_argument("--days", type=int, default=7)
+    faq_p.add_argument("--exclude-chat", type=int, action="append", default=[])
+    faq_p.add_argument("--show", help="entry id or action (suggest/escalate/none) to list samples")
+    faq_p.add_argument("--samples", type=int, default=15)
+
     ack_p = sub.add_parser("ack", help="mark chat handled for an agent")
     ack_p.add_argument("--agent", required=True)
     ack_p.add_argument("--chat", required=True, type=int)
@@ -503,6 +559,8 @@ async def _main(args: argparse.Namespace) -> int:
         return await cmd_collect(args)
     if args.cmd == "analyze":
         return await cmd_analyze(args)
+    if args.cmd == "faq":
+        return await cmd_faq(args)
     if args.cmd == "ack":
         return await cmd_ack(args)
     return 2
