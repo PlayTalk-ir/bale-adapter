@@ -14,3 +14,4 @@ data/
 !vendor/
 !vendor/*.zip
 .env.secrets
+brag-output/work/
