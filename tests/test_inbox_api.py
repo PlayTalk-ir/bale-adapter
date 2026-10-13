@@ -117,6 +117,15 @@ async def test_events_use_contact_book_display_name(inbox_client):
     assert body["events"][0]["chat"]["name"] == "نفس پیروز"
 
 
+async def test_events_include_outreach_phone_on_chat(inbox_client):
+    client, inbox, outbox, _ = inbox_client
+    outbox.set_inbox_chat_phone(42, "989121234567")
+    inbox.upsert_message(_msg("42", 1, "salam"))
+    r = await client.get("/v1/inbox/events?after=0", headers=AUTH)
+    body = await r.json()
+    assert body["events"][0]["chat"]["phone"] == "09121234567"
+
+
 async def test_events_feed_with_cursor_and_labels(inbox_client):
     client, inbox, _, _ = inbox_client
     inbox.upsert_message(_msg("42", 1, "salam"))

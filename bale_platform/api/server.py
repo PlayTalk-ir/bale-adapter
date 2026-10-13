@@ -30,6 +30,7 @@ from bale_platform.api_config import ApiSettings
 from bale_platform import panel_auth
 from bale_platform.contact_store import ContactBook
 from bale_platform.outbox.store import OutboxStore
+from bale_platform.phone import panel_mobile_from_bale_digits
 from bale_platform.store import StoredMessage, SupportStore, is_private_chat_type
 
 logger = logging.getLogger("bale.api")
@@ -278,7 +279,16 @@ class ApiRuntime:
                 if not name:
                     name = entry_display_name(entry)
                 username = entry.username or ""
-        return {"name": name, "username": username, "phone": None}
+        phone = None
+        try:
+            uid = int(chat_id)
+        except (TypeError, ValueError):
+            uid = None
+        if uid is not None:
+            digits = self.store.get_inbox_chat_phone(uid)
+            if digits:
+                phone = panel_mobile_from_bale_digits(digits)
+        return {"name": name, "username": username, "phone": phone}
 
     def _events_payload(self, rows: list[StoredMessage]) -> list[dict]:
         blobs = {row.chat_id: self._chat_blob(row.chat_id) for row in rows}

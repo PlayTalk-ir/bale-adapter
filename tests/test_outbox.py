@@ -236,6 +236,26 @@ def test_rate_limit_global_interval(tmp_path):
     assert lim.defer_seconds(42) == 0
 
 
+def test_backfill_inbox_chat_phones_from_outbox(tmp_path):
+    store = OutboxStore(tmp_path / "o.sqlite")
+    now = time.time()
+    store.insert_message(
+        message_id="m1",
+        idempotency_key="campaign:phone_989121234567",
+        payload_hash="h",
+        text="hi",
+        meta=None,
+        recipient_type="phone",
+        recipient_masked="98912***4567",
+        recipient_secret='{"type":"phone","phone":"989121234567"}',
+        expires_at=now + 3600,
+        now=now,
+    )
+    store.update_row("m1", status="sent", bale_user_id=42, updated_at=now)
+    assert store.backfill_inbox_chat_phones_from_outbox() == 1
+    assert store.get_inbox_chat_phone(42) == "989121234567"
+
+
 def test_phone_resolver_cache_no_import(tmp_path):
     client = FakeBaleClient()
     client.contacts["989924466793"] = 555
@@ -249,5 +269,6 @@ def test_phone_resolver_cache_no_import(tmp_path):
         assert a and a.bale_user_id == 555
         assert b and b.bale_user_id == 555
         assert len(client.search_contact_calls) == 1
+        assert store.get_inbox_chat_phone(555) == "989924466793"
 
     asyncio.run(run())

@@ -61,6 +61,7 @@ class RecipientResolver:
                 return None, hit.get("error_code") or "recipient_not_on_bale"
             uid = hit.get("bale_user_id")
             if uid:
+                self._store.set_inbox_chat_phone(int(uid), normalized)
                 return (
                     ResolvedRecipient(
                         int(uid),
@@ -91,6 +92,7 @@ class RecipientResolver:
         self._store.set_peer_cache(
             cache_key, miss=False, bale_user_id=uid, ttl_seconds=30 * 86400
         )
+        self._store.set_inbox_chat_phone(uid, normalized)
         self._store.record_new_peer_lookup(self._clock())
         return ResolvedRecipient(uid, "phone", mask_phone(normalized)), None
 

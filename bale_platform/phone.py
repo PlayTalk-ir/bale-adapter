@@ -79,3 +79,11 @@ def mask_phone(digits: str) -> str:
     if len(digits) < 8:
         return "***"
     return digits[:5] + "***" + digits[-4:]
+
+
+def panel_mobile_from_bale_digits(digits: str) -> str | None:
+    """`989XXXXXXXXX` → `09XXXXXXXXX` for support-panel roster matching."""
+    d = to_ascii_digits(str(digits or "")).replace(" ", "")
+    if not is_iranian_mobile_digits(d):
+        return None
+    return "0" + d[2:]

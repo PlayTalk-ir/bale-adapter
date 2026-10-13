@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -14,6 +15,8 @@ TERMINAL_STATUSES = frozenset(
     {"sent", "failed", "expired", "cancelled", "delivery_unknown"}
 )
 ACTIVE_STATUSES = frozenset({"queued", "resolving", "sending"})
+
+_IDEM_PHONE_RE = re.compile(r"phone_(989\d{9})")
 
 
 class OutboxStore:
@@ -73,6 +76,12 @@ class OutboxStore:
                 bale_user_id INTEGER,
                 error_code TEXT,
                 expires_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS inbox_chat_phones (
+                bale_user_id INTEGER PRIMARY KEY,
+                phone_digits TEXT NOT NULL,
+                updated_at REAL NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS send_ledger (
@@ -300,6 +309,65 @@ class OutboxStore:
             "bale_user_id": row["bale_user_id"],
             "error_code": row["error_code"],
         }
+
+    def set_inbox_chat_phone(self, bale_user_id: int, phone_digits: str) -> None:
+        """Remember Bale user id → normalized mobile (989…) for the support inbox feed."""
+        uid = int(bale_user_id)
+        digits = str(phone_digits or "").strip()
+        if not uid or not digits:
+            return
+        now = time.time()
+        with self._tx():
+            self._conn.execute(
+                """
+                INSERT INTO inbox_chat_phones (bale_user_id, phone_digits, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(bale_user_id) DO UPDATE SET
+                    phone_digits = excluded.phone_digits,
+                    updated_at = excluded.updated_at
+                """,
+                (uid, digits, now),
+            )
+
+    def get_inbox_chat_phone(self, bale_user_id: int) -> Optional[str]:
+        row = self._conn.execute(
+            "SELECT phone_digits FROM inbox_chat_phones WHERE bale_user_id=?",
+            (int(bale_user_id),),
+        ).fetchone()
+        if not row:
+            return None
+        return str(row["phone_digits"])
+
+    def backfill_inbox_chat_phones_from_outbox(self) -> int:
+        """Populate inbox_chat_phones from historical phone outreach rows."""
+        from bale_platform.phone import try_normalize_iranian_mobile
+
+        updated = 0
+        rows = self._conn.execute(
+            """
+            SELECT bale_user_id, recipient_secret, idempotency_key
+              FROM messages
+             WHERE bale_user_id IS NOT NULL
+               AND recipient_type = 'phone'
+            """
+        ).fetchall()
+        for row in rows:
+            uid = int(row["bale_user_id"])
+            digits: Optional[str] = None
+            try:
+                secret = json.loads(row["recipient_secret"] or "{}")
+            except json.JSONDecodeError:
+                secret = {}
+            if secret.get("type") == "phone":
+                digits = try_normalize_iranian_mobile(str(secret.get("phone", "")))
+            if not digits:
+                match = _IDEM_PHONE_RE.search(str(row["idempotency_key"] or ""))
+                if match:
+                    digits = match.group(1)
+            if digits:
+                self.set_inbox_chat_phone(uid, digits)
+                updated += 1
+        return updated
 
     def set_peer_cache(
         self,

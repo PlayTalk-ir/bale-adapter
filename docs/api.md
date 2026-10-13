@@ -82,7 +82,7 @@ Auth required. Cursor feed of stored support-inbox messages (the route the suppo
       "text": "hello",
       "date_ms": 1,
       "sender_id": "9",
-      "chat": {"name": "", "username": "", "phone": null}
+      "chat": {"name": "", "username": "", "phone": "09121234567"}
     }
   ],
   "next_after": 1,
@@ -252,6 +252,8 @@ Auth required. Private-chat messages from the support inbox store, oldest first,
 ```
 
 `kind`: `text`, `photo`, `video`, `voice`, `audio`, `file`, `sticker`, `gift`. Media without a caption carries a Persian placeholder in `text` (e.g. `[پیام صوتی]`); media bytes are not exposed. `chat.name` comes from the sender's Bale profile (looked up once per chat) or the local contact book.
+
+`chat.phone` is set when that Bale user id was resolved from an Iranian mobile via the outbox (`POST /v1/messages` with `recipient.phone`, class outreach, etc.). It is stored in the outbox DB as `989XXXXXXXXX` and returned as `09XXXXXXXXX` for roster matching in the support panel. Bale does not expose arbitrary inbound contacts' numbers; chats that only messaged support first stay `phone: null` until outreach or a manual match in the panel.
 
 ## `GET /v1/inbox/chats/{chat_id}/history?limit=100`
 

@@ -109,6 +109,9 @@ class BaleUserbotAdapter:
 
     async def _start_api_and_worker(self) -> None:
         self._outbox = OutboxStore(self._api_settings.outbox_path)
+        n = self._outbox.backfill_inbox_chat_phones_from_outbox()
+        if n:
+            logger.info("backfilled %d inbox chat phone(s) from outbox history", n)
         runtime = ApiRuntime(
             self._api_settings,
             self._outbox,
