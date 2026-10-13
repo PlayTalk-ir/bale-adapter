@@ -51,6 +51,7 @@ class BookEntry:
     local_name: str = ""
     profile_name: str = ""
     username: str = ""
+    phone_digits: str = ""
     source: str = SOURCE_MANUAL
     manual: bool = False
     updated_at: str = ""
@@ -74,6 +75,7 @@ class BookEntry:
             "username": self.username,
             "source": self.source,
             "manual": self.manual,
+            "phone_digits": self.phone_digits,
             "updated_at": self.updated_at,
         }
 
@@ -130,6 +132,12 @@ class ContactBook:
                 CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
                 """
             )
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(contacts)")}
+            if "phone_digits" not in cols:
+                conn.execute(
+                    "ALTER TABLE contacts ADD COLUMN phone_digits TEXT NOT NULL DEFAULT ''"
+                )
+            conn.commit()
 
     def __len__(self) -> int:
         return self.count()
@@ -146,6 +154,7 @@ class ContactBook:
             local_name=row["local_name"],
             profile_name=row["profile_name"],
             username=row["username"],
+            phone_digits=str(row["phone_digits"] or ""),
             source=row["source"],
             manual=bool(row["manual"]),
             updated_at=row["updated_at"],
@@ -186,6 +195,50 @@ class ContactBook:
     def to_index(self) -> ContactIndex:
         return ContactIndex(entry.to_contact() for entry in self.all())
 
+    def set_phone_digits(self, chat_id: int, phone_digits: str) -> None:
+        """Store normalized Iranian mobile digits (989…) on a contact row."""
+        digits = str(phone_digits or "").strip()
+        if not digits:
+            return
+        now = _now()
+        existing = self.get(chat_id)
+        if existing is None:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO contacts
+                        (chat_id, name, local_name, profile_name, username, phone_digits,
+                         source, manual, created_at, updated_at)
+                    VALUES (?, ?, '', '', '', ?, 'outreach', 0, ?, ?)
+                    """,
+                    (int(chat_id), str(chat_id), digits, now, now),
+                )
+            return
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE contacts SET phone_digits=?, updated_at=? WHERE chat_id=?",
+                (digits, now, int(chat_id)),
+            )
+
+    def list_for_api(self) -> List[Dict[str, Any]]:
+        """Export for the support panel (full phones; auth required on HTTP)."""
+        from bale_platform.phone import panel_mobile_from_bale_digits
+
+        out: List[Dict[str, Any]] = []
+        for entry in self.all():
+            phone = panel_mobile_from_bale_digits(entry.phone_digits) if entry.phone_digits else None
+            out.append(
+                {
+                    "chat_id": str(entry.chat_id),
+                    "name": entry_display_name(entry),
+                    "username": entry.username or None,
+                    "phone": phone,
+                    "source": entry.source,
+                    "manual": entry.manual,
+                }
+            )
+        return out
+
     # ------------------------------------------------------------------
     # writes
     # ------------------------------------------------------------------
@@ -199,9 +252,9 @@ class ContactBook:
                 conn.execute(
                     """
                     INSERT INTO contacts
-                        (chat_id, name, local_name, profile_name, username,
+                        (chat_id, name, local_name, profile_name, username, phone_digits,
                          source, manual, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, '', ?, 0, ?, ?)
                     """,
                     (
                         contact.chat_id,
@@ -264,6 +317,7 @@ class ContactBook:
         local_name: str = "",
         profile_name: str = "",
         username: str = "",
+        phone_digits: str = "",
     ) -> BookEntry:
         """Add (or re-own) an entry a human typed. Marks it ``manual``."""
         clean = str(name or "").strip() or str(chat_id)
@@ -272,11 +326,15 @@ class ContactBook:
             conn.execute(
                 """
                 INSERT INTO contacts
-                    (chat_id, name, local_name, profile_name, username,
+                    (chat_id, name, local_name, profile_name, username, phone_digits,
                      source, manual, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 ON CONFLICT(chat_id) DO UPDATE SET
                     name = excluded.name,
+                    phone_digits = CASE
+                        WHEN excluded.phone_digits <> '' THEN excluded.phone_digits
+                        ELSE contacts.phone_digits
+                    END,
                     source = excluded.source,
                     manual = 1,
                     updated_at = excluded.updated_at
@@ -287,6 +345,7 @@ class ContactBook:
                     local_name,
                     profile_name,
                     username,
+                    str(phone_digits or ""),
                     SOURCE_MANUAL,
                     now,
                     now,
@@ -355,3 +414,13 @@ async def refresh_book(
 
     counts["total"] = book.count()
     return counts
+
+
+def merge_outbox_phones_into_book(book: ContactBook, outbox: Any) -> int:
+    """Copy outreach phone mappings from the outbox into the local contact book."""
+    n = 0
+    for uid, digits in outbox.list_inbox_chat_phones():
+        if digits:
+            book.set_phone_digits(uid, digits)
+            n += 1
+    return n

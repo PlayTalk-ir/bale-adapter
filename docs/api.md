@@ -255,6 +255,27 @@ Auth required. Private-chat messages from the support inbox store, oldest first,
 
 `chat.phone` is set when that Bale user id was resolved from an Iranian mobile via the outbox (`POST /v1/messages` with `recipient.phone`, class outreach, etc.). It is stored in the outbox DB as `989XXXXXXXXX` and returned as `09XXXXXXXXX` for roster matching in the support panel. Bale does not expose arbitrary inbound contacts' numbers; chats that only messaged support first stay `phone: null` until outreach or a manual match in the panel.
 
+## `GET /v1/contacts`
+
+Auth required. Full local contact book (`data/contacts.sqlite`): Bale address book + dialog refresh + manual entries, with `phone` when known (manual add-by-phone, outreach merge from outbox). Used by the support panel to match Bale `chat_id` → roster phone.
+
+```json
+{
+  "contacts": [
+    {
+      "chat_id": "123456",
+      "name": "Sara Ahmadi",
+      "username": null,
+      "phone": "09121234567",
+      "source": "dialog",
+      "manual": false
+    }
+  ]
+}
+```
+
+Run `contacts --refresh` on the adapter (or the panel «دفترچه» refresh) to pull names from Bale; phones accumulate from outreach and manual entry.
+
 ## `GET /v1/inbox/chats/{chat_id}/history?limit=100`
 
 Auth required. Last `limit` stored messages of one chat, oldest first, same event shape. Used to backfill a conversation the first time it is opened.

@@ -338,6 +338,12 @@ class OutboxStore:
             return None
         return str(row["phone_digits"])
 
+    def list_inbox_chat_phones(self) -> List[Tuple[int, str]]:
+        rows = self._conn.execute(
+            "SELECT bale_user_id, phone_digits FROM inbox_chat_phones"
+        ).fetchall()
+        return [(int(r["bale_user_id"]), str(r["phone_digits"])) for r in rows]
+
     def backfill_inbox_chat_phones_from_outbox(self) -> int:
         """Populate inbox_chat_phones from historical phone outreach rows."""
         from bale_platform.phone import try_normalize_iranian_mobile

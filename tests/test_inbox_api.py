@@ -117,6 +117,22 @@ async def test_events_use_contact_book_display_name(inbox_client):
     assert body["events"][0]["chat"]["name"] == "نفس پیروز"
 
 
+async def test_get_contacts_lists_book_with_phone(inbox_client):
+    client, inbox, outbox, contacts = inbox_client
+    contacts.set_phone_digits(77, "989121234567")
+    contacts.upsert_bale(
+        __import__("bale_platform.contacts", fromlist=["SavedContact"]).SavedContact(
+            77, "Sara", source="dialog", local_name="Sara"
+        )
+    )
+    r = await client.get("/v1/contacts", headers=AUTH)
+    body = await r.json()
+    assert r.status == 200
+    row = next(c for c in body["contacts"] if c["chat_id"] == "77")
+    assert row["phone"] == "09121234567"
+    assert row["name"] == "Sara"
+
+
 async def test_events_include_outreach_phone_on_chat(inbox_client):
     client, inbox, outbox, _ = inbox_client
     outbox.set_inbox_chat_phone(42, "989121234567")

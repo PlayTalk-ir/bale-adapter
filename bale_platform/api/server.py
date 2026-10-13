@@ -28,7 +28,7 @@ from bale_platform.api.swagger_ui import SWAGGER_UI_HTML
 from bale_platform.api.validation import validate_post_body
 from bale_platform.api_config import ApiSettings
 from bale_platform import panel_auth
-from bale_platform.contact_store import ContactBook
+from bale_platform.contact_store import ContactBook, merge_outbox_phones_into_book
 from bale_platform.outbox.store import OutboxStore
 from bale_platform.phone import panel_mobile_from_bale_digits
 from bale_platform.store import StoredMessage, SupportStore, is_private_chat_type
@@ -126,6 +126,7 @@ class ApiRuntime:
         app.router.add_get("/v1/openapi.json", self.openapi_json)
         app.router.add_get("/v1/session", self.get_session)
         app.router.add_get("/v1/inbox/events", self.get_inbox_events)
+        app.router.add_get("/v1/contacts", self.get_contacts)
         app.router.add_get(
             "/v1/inbox/chats/{chat_id}/history", self.get_inbox_history
         )
@@ -270,6 +271,7 @@ class ApiRuntime:
             label = self.inbox.get_label(str(chat_id))
             if label and label.strip() and label.strip() != str(chat_id):
                 name = label.strip()
+        phone = None
         if self.contacts is not None:
             try:
                 entry = self.contacts.get(chat_id)
@@ -279,16 +281,28 @@ class ApiRuntime:
                 if not name:
                     name = entry_display_name(entry)
                 username = entry.username or ""
-        phone = None
-        try:
-            uid = int(chat_id)
-        except (TypeError, ValueError):
-            uid = None
-        if uid is not None:
-            digits = self.store.get_inbox_chat_phone(uid)
-            if digits:
-                phone = panel_mobile_from_bale_digits(digits)
+                if entry.phone_digits:
+                    phone = panel_mobile_from_bale_digits(entry.phone_digits)
+        if phone is None:
+            try:
+                uid = int(chat_id)
+            except (TypeError, ValueError):
+                uid = None
+            if uid is not None:
+                digits = self.store.get_inbox_chat_phone(uid)
+                if digits:
+                    phone = panel_mobile_from_bale_digits(digits)
         return {"name": name, "username": username, "phone": phone}
+
+    async def get_contacts(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        if self.contacts is not None:
+            merge_outbox_phones_into_book(self.contacts, self.store)
+            payload = {"contacts": self.contacts.list_for_api()}
+        else:
+            payload = {"contacts": []}
+        return web.json_response(payload)
 
     def _events_payload(self, rows: list[StoredMessage]) -> list[dict]:
         blobs = {row.chat_id: self._chat_blob(row.chat_id) for row in rows}

@@ -641,7 +641,10 @@ async def h_contacts_add(request: web.Request) -> web.Response:
     else:
         return redirect("/contacts?error=" + _quote("بخش دوم باید chat_id یا شماره باشد"))
 
-    entry = state.book().add_manual(name, chat_id)
+    from bale_platform.phone import try_normalize_iranian_mobile
+
+    phone_digits = try_normalize_iranian_mobile(target) or "" if kind == TARGET_PHONE else ""
+    entry = state.book().add_manual(name, chat_id, phone_digits=phone_digits)
     return redirect(
         "/contacts?notice=" + _quote(f"اضافه شد: {entry.name} (chat={entry.chat_id})")
     )
