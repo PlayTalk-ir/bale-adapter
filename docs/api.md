@@ -274,7 +274,40 @@ Auth required. Full local contact book (`data/contacts.sqlite`): Bale address bo
 }
 ```
 
-Run `contacts --refresh` on the adapter (or the panel «دفترچه» refresh) to pull names from Bale; phones accumulate from outreach and manual entry.
+Run `contacts --refresh` on the adapter (or the panel «دفترچه» refresh) to pull names from Bale; phones accumulate from outreach, roster import, and manual entry.
+
+## `POST /v1/contacts/import-roster`
+
+Auth required. Bale session must be connected. Resolves Iranian mobiles via Bale contact search (same cache and daily lookup limits as outbound `recipient.phone`). Each match is stored in the outbox phone map and the local contact book (`source: roster`).
+
+Request body:
+
+```json
+{
+  "contacts": [{ "phone": "09121234567", "name": "Sara Ahmadi" }],
+  "max_lookups": 25
+}
+```
+
+At most 50 contacts per request; `max_lookups` caps how many are processed (default 25, max 50). Lookups are paced with `BALE_LOOKUP_MIN_INTERVAL_S` (sleep + retry on `rate_limited`). The support panel sends **one phone per request** with ~6.5s between calls by default (`BALE_ROSTER_BATCH_SIZE`, `BALE_ROSTER_BATCH_DELAY_MS`). Response:
+
+```json
+{
+  "results": [
+    { "phone": "09121234567", "panel_phone": "09121234567", "chat_id": "123456", "ok": true, "error": null }
+  ],
+  "stats": {
+    "processed": 1,
+    "matched": 1,
+    "not_on_bale": 0,
+    "invalid": 0,
+    "rate_limited": 0,
+    "stopped_early": false
+  }
+}
+```
+
+The support panel calls this daily with new roster phones from admin caches (`scripts/lib/inbox/bale-roster-import.mjs`).
 
 ## `GET /v1/inbox/chats/{chat_id}/history?limit=100`
 

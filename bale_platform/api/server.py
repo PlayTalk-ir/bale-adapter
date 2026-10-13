@@ -7,7 +7,10 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bale_platform.resolver import RecipientResolver
 
 from aiohttp import web
 from ulid import ULID
@@ -49,6 +52,7 @@ class ApiRuntime:
         clock: Optional[Callable[[], float]] = None,
         inbox: Optional[SupportStore] = None,
         contacts: Optional[ContactBook] = None,
+        get_resolver: Optional[Callable[[], Optional["RecipientResolver"]]] = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -59,6 +63,7 @@ class ApiRuntime:
         self.clock = clock or time.time
         self.inbox = inbox
         self.contacts = contacts
+        self.get_resolver = get_resolver
 
     def _error(self, code: str, message: str, details: dict | None = None, status: int = 400) -> web.Response:
         return web.json_response(
@@ -127,6 +132,7 @@ class ApiRuntime:
         app.router.add_get("/v1/session", self.get_session)
         app.router.add_get("/v1/inbox/events", self.get_inbox_events)
         app.router.add_get("/v1/contacts", self.get_contacts)
+        app.router.add_post("/v1/contacts/import-roster", self.post_contacts_import_roster)
         app.router.add_get(
             "/v1/inbox/chats/{chat_id}/history", self.get_inbox_history
         )
@@ -302,6 +308,56 @@ class ApiRuntime:
             payload = {"contacts": self.contacts.list_for_api()}
         else:
             payload = {"contacts": []}
+        return web.json_response(payload)
+
+    async def post_contacts_import_roster(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        if not self.session_connected():
+            return self._error(
+                "session_closed",
+                "Bale session is not connected",
+                status=503,
+            )
+        resolver = self.get_resolver() if self.get_resolver else None
+        if resolver is None:
+            return self._error(
+                "session_closed",
+                "phone resolver is not available",
+                status=503,
+            )
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return self._error("recipient_invalid", "invalid JSON body", status=422)
+        if not isinstance(body, dict):
+            return self._error("recipient_invalid", "body must be object", status=422)
+        raw_items = body.get("contacts")
+        if not isinstance(raw_items, list) or not raw_items:
+            return self._error(
+                "recipient_invalid",
+                "contacts must be a non-empty array",
+                status=422,
+            )
+        if len(raw_items) > 50:
+            return self._error(
+                "recipient_invalid",
+                "at most 50 contacts per request",
+                status=422,
+            )
+        max_lookups = body.get("max_lookups", 25)
+        try:
+            max_lookups = int(max_lookups)
+        except (TypeError, ValueError):
+            max_lookups = 25
+        from bale_platform.roster_lookup import import_roster_contacts
+
+        payload = await import_roster_contacts(
+            resolver,
+            raw_items,
+            self.contacts,
+            max_lookups=max_lookups,
+        )
         return web.json_response(payload)
 
     def _events_payload(self, rows: list[StoredMessage]) -> list[dict]:

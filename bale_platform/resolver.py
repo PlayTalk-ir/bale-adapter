@@ -43,6 +43,14 @@ class RecipientResolver:
         self._lookup_min_interval = lookup_min_interval_s
         self._clock = clock or time.time
 
+    @property
+    def lookup_min_interval_s(self) -> float:
+        return float(self._lookup_min_interval)
+
+    @property
+    def new_peer_max_per_day(self) -> int:
+        return int(self._new_peer_max)
+
     def _phone_key(self, normalized_phone: str) -> str:
         return hmac.new(
             self._pepper.encode(),

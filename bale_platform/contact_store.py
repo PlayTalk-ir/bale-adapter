@@ -195,30 +195,44 @@ class ContactBook:
     def to_index(self) -> ContactIndex:
         return ContactIndex(entry.to_contact() for entry in self.all())
 
-    def set_phone_digits(self, chat_id: int, phone_digits: str) -> None:
+    def set_phone_digits(
+        self, chat_id: int, phone_digits: str, *, display_name: str = ""
+    ) -> None:
         """Store normalized Iranian mobile digits (989…) on a contact row."""
         digits = str(phone_digits or "").strip()
         if not digits:
             return
+        label = str(display_name or "").strip()
         now = _now()
         existing = self.get(chat_id)
         if existing is None:
+            row_name = label or str(chat_id)
             with self._connect() as conn:
                 conn.execute(
                     """
                     INSERT INTO contacts
                         (chat_id, name, local_name, profile_name, username, phone_digits,
                          source, manual, created_at, updated_at)
-                    VALUES (?, ?, '', '', '', ?, 'outreach', 0, ?, ?)
+                    VALUES (?, ?, '', '', '', ?, 'roster', 0, ?, ?)
                     """,
-                    (int(chat_id), str(chat_id), digits, now, now),
+                    (int(chat_id), row_name, digits, now, now),
                 )
             return
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE contacts SET phone_digits=?, updated_at=? WHERE chat_id=?",
-                (digits, now, int(chat_id)),
-            )
+            if label and not existing.manual and existing.source in ("roster", "outreach"):
+                conn.execute(
+                    """
+                    UPDATE contacts
+                       SET phone_digits=?, name=?, updated_at=?
+                     WHERE chat_id=?
+                    """,
+                    (digits, label, now, int(chat_id)),
+                )
+            else:
+                conn.execute(
+                    "UPDATE contacts SET phone_digits=?, updated_at=? WHERE chat_id=?",
+                    (digits, now, int(chat_id)),
+                )
 
     def list_for_api(self) -> List[Dict[str, Any]]:
         """Export for the support panel (full phones; auth required on HTTP)."""

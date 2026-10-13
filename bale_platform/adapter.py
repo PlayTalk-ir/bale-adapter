@@ -125,6 +125,7 @@ class BaleUserbotAdapter:
             resume_breaker=self._resume_breaker,
             inbox=self._store,
             contacts=book,
+            get_resolver=self._get_resolver,
         )
         self._api_runner = await run_api_server(
             runtime, self._api_settings.host, self._api_settings.port
