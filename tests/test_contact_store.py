@@ -17,7 +17,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from bale_platform import contacts as contacts_mod
-from bale_platform.contact_store import SOURCE_MANUAL, ContactBook, refresh_book
+from bale_platform.contact_store import (
+    SOURCE_MANUAL,
+    ContactBook,
+    entry_display_name,
+    refresh_book,
+)
 from bale_platform.contacts import SavedContact
 
 
@@ -99,6 +104,21 @@ class TestUpsertPolicy:
         store.upsert_bale(SavedContact(7, "نفس", source="dialog"))
         assert store.upsert_bale(SavedContact(7, "نفس پیروز", source="dialog")) == "updated"
         assert store.get(7).name == "نفس پیروز"
+
+    def test_display_name_uses_local_name_when_name_is_chat_id(self, tmp_path):
+        store = book(tmp_path)
+        store.upsert_bale(
+            SavedContact(
+                164862466,
+                "164862466",
+                local_name="آرن داودی",
+                profile_name="",
+                source="contacts",
+            )
+        )
+        entry = store.get(164862466)
+        assert entry is not None
+        assert entry_display_name(entry) == "آرن داودی"
 
     def test_manual_name_wins_but_bale_fields_refresh(self, tmp_path):
         store = book(tmp_path)

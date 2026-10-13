@@ -20,6 +20,7 @@ NAV = [
     ("صندوق", "/inbox"),
     ("پیام‌ها", "/messages"),
     ("تحلیل", "/analysis"),
+    ("API", "/api"),
     ("سیستم", "/system"),
     ("توکن API", "/api-tokens"),
 ]

@@ -107,8 +107,24 @@ class OutboxStore:
             );
             INSERT OR IGNORE INTO api_state (id, consecutive_errors, breaker_open)
                 VALUES (1, 0, 0);
+
+            CREATE TABLE IF NOT EXISTS api_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL NOT NULL,
+                method TEXT NOT NULL,
+                path TEXT NOT NULL,
+                status INTEGER NOT NULL,
+                token_hash TEXT,
+                request_id TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_requests_ts ON api_requests(ts DESC);
             """
         )
+        cols = {row["name"] for row in self._conn.execute("PRAGMA table_info(messages)")}
+        if "mode" not in cols:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN mode TEXT NOT NULL DEFAULT 'send'"
+            )
         self._conn.commit()
 
     @staticmethod
@@ -166,6 +182,7 @@ class OutboxStore:
         recipient_secret: str,
         expires_at: float,
         now: float,
+        mode: str = "send",
     ) -> None:
         with self._tx():
             self._conn.execute(
@@ -173,8 +190,8 @@ class OutboxStore:
                 INSERT INTO messages (
                     message_id, idempotency_key, payload_hash, status, text, meta_json,
                     recipient_type, recipient_masked, recipient_secret,
-                    expires_at, created_at, updated_at, next_attempt_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    expires_at, created_at, updated_at, next_attempt_at, mode
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     message_id,
@@ -190,6 +207,7 @@ class OutboxStore:
                     now,
                     now,
                     now,
+                    mode,
                 ),
             )
 
@@ -399,3 +417,127 @@ class OutboxStore:
             self._conn.execute(
                 "UPDATE api_state SET breaker_open=0, consecutive_errors=0 WHERE id=1"
             )
+
+    def log_api_request(
+        self,
+        *,
+        method: str,
+        path: str,
+        status: int,
+        token_hash: Optional[str],
+        request_id: str,
+        ts: Optional[float] = None,
+    ) -> None:
+        when = ts if ts is not None else time.time()
+        with self._tx():
+            self._conn.execute(
+                """
+                INSERT INTO api_requests (ts, method, path, status, token_hash, request_id)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (when, method, path, status, token_hash, request_id),
+            )
+            self._conn.execute(
+                "DELETE FROM api_requests WHERE id NOT IN "
+                "(SELECT id FROM api_requests ORDER BY ts DESC LIMIT 5000)"
+            )
+
+    def recent_api_requests(self, limit: int = 40) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT ts, method, path, status, token_hash, request_id
+            FROM api_requests ORDER BY ts DESC LIMIT ?
+            """,
+            (max(1, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def recent_messages(self, limit: int = 30) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT message_id, status, recipient_masked, text, created_at, sent_at, error_code
+            FROM messages ORDER BY created_at DESC LIMIT ?
+            """,
+            (max(1, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def status_counts(self) -> Dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT status, COUNT(*) AS c FROM messages GROUP BY status"
+        ).fetchall()
+        return {str(row["status"]): int(row["c"]) for row in rows}
+
+    def intake_usage_rows(self, *, hours: int = 24) -> List[Dict[str, Any]]:
+        since = int(time.time() // 60) - hours * 60
+        rows = self._conn.execute(
+            """
+            SELECT token_hash, SUM(count) AS total
+            FROM intake_rate WHERE minute_bucket >= ?
+            GROUP BY token_hash ORDER BY total DESC
+            """,
+            (since,),
+        ).fetchall()
+        return [{"token_hash": row["token_hash"], "total": int(row["total"])} for row in rows]
+
+    def log_api_request(
+        self,
+        *,
+        method: str,
+        path: str,
+        status: int,
+        token_hash: Optional[str],
+        request_id: str,
+        ts: Optional[float] = None,
+    ) -> None:
+        when = ts if ts is not None else time.time()
+        with self._tx():
+            self._conn.execute(
+                """
+                INSERT INTO api_requests (ts, method, path, status, token_hash, request_id)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (when, method, path, status, token_hash, request_id),
+            )
+            self._conn.execute(
+                "DELETE FROM api_requests WHERE id NOT IN "
+                "(SELECT id FROM api_requests ORDER BY ts DESC LIMIT 5000)"
+            )
+
+    def recent_api_requests(self, limit: int = 40) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT ts, method, path, status, token_hash, request_id
+            FROM api_requests ORDER BY ts DESC LIMIT ?
+            """,
+            (max(1, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def recent_messages(self, limit: int = 30) -> List[Dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT message_id, status, recipient_masked, text, created_at, sent_at, error_code
+            FROM messages ORDER BY created_at DESC LIMIT ?
+            """,
+            (max(1, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def status_counts(self) -> Dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT status, COUNT(*) AS c FROM messages GROUP BY status"
+        ).fetchall()
+        return {str(row["status"]): int(row["c"]) for row in rows}
+
+    def intake_usage_rows(self, *, hours: int = 24) -> List[Dict[str, Any]]:
+        since = int(time.time() // 60) - hours * 60
+        rows = self._conn.execute(
+            """
+            SELECT token_hash, SUM(count) AS total
+            FROM intake_rate WHERE minute_bucket >= ?
+            GROUP BY token_hash ORDER BY total DESC
+            """,
+            (since,),
+        ).fetchall()
+        return [{"token_hash": row["token_hash"], "total": int(row["total"])} for row in rows]

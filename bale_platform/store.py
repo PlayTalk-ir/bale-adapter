@@ -26,6 +26,13 @@ class StoredMessage:
     direction: str  # "in" | "out"
     seq: int = 0
     kind: str = "text"
+    chat_type: str = ""
+
+
+def is_private_chat_type(chat_type: str) -> bool:
+    """History-synced rows have no chat type and come from private dialogs only."""
+    value = (chat_type or "").strip().upper()
+    return value in ("", "1", "PRIVATE") or value.endswith(".PRIVATE")
 
 
 class SupportStore:
@@ -83,6 +90,10 @@ class SupportStore:
             conn.execute(
                 "ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'"
             )
+        if "chat_type" not in cols:
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN chat_type TEXT NOT NULL DEFAULT ''"
+            )
         if "seq" not in cols:
             conn.execute("ALTER TABLE messages ADD COLUMN seq INTEGER")
         missing = conn.execute(
@@ -118,20 +129,28 @@ class SupportStore:
             direction=row["direction"],
             seq=int(row["seq"] or 0) if "seq" in keys else 0,
             kind=str(row["kind"] or "text") if "kind" in keys else "text",
+            chat_type=str(row["chat_type"] or "") if "chat_type" in keys else "",
         )
 
-    def upsert_message(self, msg: Dict[str, Any], *, direction: str = "in") -> None:
+    def upsert_message(self, msg: Dict[str, Any], *, direction: str = "in") -> bool:
+        from bale_platform.messages import display_text
+
         chat_id = str(msg.get("chat_id") or "")
         message_id = msg.get("message_id")
         if not chat_id or message_id is None:
-            return
-        text = (msg.get("text") or "").strip()
-        if not text:
-            return
+            return False
         kind = str(msg.get("kind") or "text")
+        if kind == "service":
+            return False
+        text = display_text(msg.get("text") or "", kind)
+        if not text:
+            return False
+        if kind == "empty":
+            kind = "text"
         sender_id = str(msg.get("sender_id") or "")
         timestamp = str(msg.get("timestamp") or "")
         date_ms = int(msg.get("date_ms") or 0)
+        chat_type = str(msg.get("chat_type") or "")
         message_id = int(message_id)
         with self._connect() as conn:
             existing = conn.execute(
@@ -143,7 +162,8 @@ class SupportStore:
                     """
                     UPDATE messages
                        SET sender_id = ?, text = ?, timestamp = ?, date_ms = ?,
-                           direction = ?, kind = ?
+                           direction = ?, kind = ?,
+                           chat_type = CASE WHEN ? = '' THEN chat_type ELSE ? END
                      WHERE chat_id = ? AND message_id = ?
                     """,
                     (
@@ -153,11 +173,13 @@ class SupportStore:
                         date_ms,
                         direction,
                         kind,
+                        chat_type,
+                        chat_type,
                         chat_id,
                         message_id,
                     ),
                 )
-                return
+                return False
             seq = int(
                 conn.execute(
                     "SELECT COALESCE(MAX(seq), 0) + 1 FROM messages"
@@ -167,8 +189,8 @@ class SupportStore:
                 """
                 INSERT INTO messages
                     (chat_id, message_id, sender_id, text, timestamp, date_ms,
-                     direction, seq, kind)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     direction, seq, kind, chat_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     chat_id,
@@ -180,8 +202,51 @@ class SupportStore:
                     direction,
                     seq,
                     kind,
+                    chat_type,
                 ),
             )
+            return True
+
+    def get_label(self, chat_id: str) -> Optional[str]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT label FROM chat_labels WHERE chat_id=?", (str(chat_id),)
+            ).fetchone()
+        return str(row["label"]) if row else None
+
+    def labels(self, chat_ids: List[str]) -> Dict[str, str]:
+        if not chat_ids:
+            return {}
+        marks = ",".join("?" for _ in chat_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT chat_id, label FROM chat_labels WHERE chat_id IN ({marks})",
+                [str(c) for c in chat_ids],
+            ).fetchall()
+        return {str(r["chat_id"]): str(r["label"]) for r in rows}
+
+    def set_label(self, chat_id: str, label: str, *, category: Optional[str] = None) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO chat_labels (chat_id, label, category, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    label=excluded.label,
+                    category=COALESCE(excluded.category, chat_labels.category),
+                    updated_at=excluded.updated_at
+                """,
+                (str(chat_id), label, category, now),
+            )
+
+    def last_incoming_ms(self, chat_id: str) -> Optional[int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MAX(date_ms) AS m FROM messages WHERE chat_id=? AND direction='in'",
+                (str(chat_id),),
+            ).fetchone()
+        return int(row["m"]) if row and row["m"] is not None else None
 
     def ack_chat(self, agent_id: str, chat_id: str, last_message_id: int) -> None:
         now = datetime.now(timezone.utc).isoformat()

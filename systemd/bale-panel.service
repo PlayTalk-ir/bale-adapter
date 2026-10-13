@@ -9,6 +9,7 @@ User=root
 WorkingDirectory=/opt/bale-adapter
 EnvironmentFile=/opt/bale-adapter/.env
 EnvironmentFile=-/opt/bale-adapter/.env.secrets
+Environment=BALE_SECRETS_FILE=/opt/bale-adapter/.env.secrets
 Environment=PYTHONUNBUFFERED=1
 # Operator must add BALE_PANEL_TOKEN=<random> to /opt/bale-adapter/.env.
 # Bound to loopback on purpose — reach it with an SSH tunnel:

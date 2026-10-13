@@ -34,7 +34,9 @@ class OutboxWorker:
         sending_paused: Callable[[], bool],
         clock: Optional[Callable[[], float]] = None,
         sleep: Optional[Callable[[float], Any]] = None,
+        on_sent: Optional[Callable[[int, Optional[int], str], None]] = None,
     ) -> None:
+        self._on_sent = on_sent
         self._store = store
         self._settings = settings
         self._get_client = get_client
@@ -57,6 +59,10 @@ class OutboxWorker:
                 recipient_max_per_hour=settings.recipient_max_per_hour,
                 recipient_max_per_day=settings.recipient_max_per_day,
                 quiet_hours=settings.quiet_hours,
+                reply_global_min_interval_s=settings.reply_global_min_interval_s,
+                reply_jitter_s=settings.reply_jitter_s,
+                reply_min_interval_s=settings.reply_min_interval_s,
+                reply_max_per_hour=settings.reply_max_per_hour,
             ),
             self._clock,
         )
@@ -149,7 +155,8 @@ class OutboxWorker:
             self._fail(mid, err_code or "recipient_not_found", "resolution failed", now)
             return
 
-        defer = self._limiter.defer_seconds(rec.bale_user_id)
+        is_reply = (row.get("mode") or "send") == "reply"
+        defer = self._limiter.defer_seconds(rec.bale_user_id, reply=is_reply)
         if defer > 0:
             self._store.update_row(
                 mid,
@@ -208,6 +215,11 @@ class OutboxWorker:
         )
         self._limiter.record_send(rec.bale_user_id)
         self._store.record_bale_success()
+        if self._on_sent and (is_reply or self._settings.record_in_inbox):
+            try:
+                self._on_sent(rec.bale_user_id, outcome.bale_message_id, text)
+            except Exception:
+                logger.exception("on_sent hook failed for message_id=%s", mid)
 
     async def _handle_send_error(self, mid: str, row: dict, outcome: Any, now: float) -> None:
         msg = outcome.error_message or ""

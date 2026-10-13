@@ -73,6 +73,9 @@ async def sync_dialog_history(
     dialogs = await list_dialogs(client, limit=dialog_limit, private_only=private_only)
     saved = 0
     for d in dialogs:
+        label = (d.label or "").strip()
+        if label and label != d.chat_id:
+            store.set_label(d.chat_id, label)
         chat_type = ChatType.PRIVATE if private_only else ChatType.PRIVATE
         try:
             msgs = await client.load_history(

@@ -368,6 +368,41 @@ class TestPages:
         finally:
             await http.close()
 
+    @pytest.mark.asyncio
+    async def test_send_page_get_shows_form(self, tmp_path, monkeypatch):
+        http = await make_http(tmp_path, monkeypatch)
+        try:
+            await login_and_csrf(http)
+            resp = await http.get("/")
+            assert resp.status == 200
+            page = await resp.text()
+            assert "ارسال پیام" in page and 'action="/send"' in page
+        finally:
+            await http.close()
+
+    @pytest.mark.asyncio
+    async def test_inbox_with_outbound_only_chat(self, tmp_path, monkeypatch):
+        http = await make_http(tmp_path, monkeypatch)
+        try:
+            await login_and_csrf(http)
+            store = SupportStore(panel_mod.store_path())
+            store.upsert_message(
+                {
+                    "chat_id": "42",
+                    "message_id": 1,
+                    "sender_id": "1",
+                    "text": "hello out",
+                    "timestamp": "t",
+                    "date_ms": 1700000000000,
+                },
+                direction="out",
+            )
+            resp = await http.get("/inbox")
+            assert resp.status == 200
+            assert "صندوق" in await resp.text()
+        finally:
+            await http.close()
+
 
 class TestMisc:
     def test_classify_target_kinds(self):

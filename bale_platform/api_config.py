@@ -66,6 +66,12 @@ class ApiSettings:
     docs_password: str = ""
     docs_token: str = ""
 
+    reply_window_h: float = 24.0
+    reply_global_min_interval_s: float = 1.5
+    reply_jitter_s: float = 1.5
+    reply_min_interval_s: float = 3.0
+    reply_max_per_hour: int = 60
+
     @classmethod
     def from_env(cls) -> "ApiSettings":
         tokens = [s.strip() for s in os.getenv("BALE_ADAPTER_API_TOKENS", "").split(",") if s.strip()]
@@ -101,6 +107,11 @@ class ApiSettings:
             ),
             docs_password=os.getenv("BALE_PANEL_PASSWORD", ""),
             docs_token=os.getenv("BALE_PANEL_TOKEN", ""),
+            reply_window_h=_float("BALE_REPLY_WINDOW_H", 24.0),
+            reply_global_min_interval_s=_float("BALE_REPLY_GLOBAL_MIN_INTERVAL_S", 1.5),
+            reply_jitter_s=_float("BALE_REPLY_JITTER_S", 1.5),
+            reply_min_interval_s=_float("BALE_REPLY_MIN_INTERVAL_S", 3.0),
+            reply_max_per_hour=_int("BALE_REPLY_MAX_PER_HOUR", 60),
         )
 
     def validate_startup(self) -> None:

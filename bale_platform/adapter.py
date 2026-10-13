@@ -279,6 +279,8 @@ class BaleUserbotAdapter:
             self._store.upsert_message(norm, direction=direction)
         except Exception:
             logger.exception("failed to persist message to support inbox store")
+        if direction == "in":
+            await self._remember_chat_label(chat_id)
 
         # Hand off to kb.learn for fact extraction. Raw text is never written.
         if self._fact_writer is None:
@@ -290,6 +292,27 @@ class BaleUserbotAdapter:
                 logger.debug("Bale: stored 1 fact block (no raw text persisted)")
         except Exception:
             logger.exception("Bale fact extraction failed (text not stored)")
+
+    async def _remember_chat_label(self, chat_id: str) -> None:
+        """Store the sender's display name once so the inbox feed can show it."""
+        try:
+            if self._client is None:
+                return
+            existing = self._store.get_label(chat_id)
+            if existing and existing.strip() and existing.strip() != str(chat_id):
+                return
+            from aiobale.enums import ChatType  # type: ignore[import-not-found]
+
+            user = await self._client.load_user(chat_id=int(chat_id), chat_type=ChatType.PRIVATE)
+            label = (
+                getattr(user, "local_name", None)
+                or getattr(user, "name", None)
+                or getattr(user, "nick", None)
+            )
+            if label:
+                self._store.set_label(chat_id, str(label))
+        except Exception:
+            logger.debug("could not load label for chat %s", chat_id, exc_info=True)
 
     async def _ensure_fact_writer(self) -> None:
         if self._fact_writer is not None:

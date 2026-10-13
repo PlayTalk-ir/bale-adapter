@@ -23,6 +23,7 @@ templates in `panel_ui.py` (no Jinja2).
 | `/messages` | stored messages with chat/direction/limit filters |
 | `/analysis` | concern buckets + FAQ hints + sync job |
 | `/system` | paths, KB facts tail, runner log tail |
+| `/api` | HTTP API queue, request log, intake stats, create API bearer keys |
 | `/job`, `/api/job` | one background job at a time, log polled every 2s |
 | `/login`, `/logout` | operator token → signed cookie |
 
@@ -39,7 +40,9 @@ templates in `panel_ui.py` (no Jinja2).
 
 ## Jobs
 
-Network actions (send / refresh / sync / live unread) run as one background
+Inbox **sync** refreshes the contact book from Bale, then pulls dialog history
+(names land in `chat_labels` + `contacts.sqlite`). Network actions (send /
+refresh / sync / live unread) run as one background
 `asyncio` task writing to a `Job` log; the browser polls `/job` → `/api/job`.
 Only one job at a time (`start_job` returns `None` while busy → `?busy=1`).
 A preview (`dry-run`) job stores the payload in `job.confirm` so the page can

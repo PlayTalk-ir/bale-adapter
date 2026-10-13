@@ -35,3 +35,13 @@ def kb_dir() -> Path:
 def facts_path() -> Path:
     """Structured facts written by ``kb.learn`` (no raw text)."""
     return kb_dir() / "learned_facts.mdl"
+
+
+def outbox_path() -> Path:
+    """HTTP API outbound queue (WAL SQLite)."""
+    return Path(os.getenv("BALE_OUTBOX_PATH", "data/outbox.sqlite"))
+
+
+def outbox_path() -> Path:
+    """HTTP API outbound queue (WAL SQLite)."""
+    return Path(os.getenv("BALE_OUTBOX_PATH", "data/outbox.sqlite"))

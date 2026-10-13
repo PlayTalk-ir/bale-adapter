@@ -77,6 +77,27 @@ class BookEntry:
             "updated_at": self.updated_at,
         }
 
+    @property
+    def display_name(self) -> str:
+        return entry_display_name(self)
+
+
+def entry_display_name(entry: BookEntry) -> str:
+    """Best label for UI: saved Bale name beats bare chat id in ``name``."""
+    if entry.manual:
+        manual = str(entry.name or "").strip()
+        if manual and manual != str(entry.chat_id):
+            return manual
+    for part in (entry.local_name, entry.profile_name, entry.username, entry.name):
+        text = str(part or "").strip()
+        if text and text != str(entry.chat_id):
+            return text
+    for part in (entry.local_name, entry.profile_name, entry.username, entry.name):
+        text = str(part or "").strip()
+        if text:
+            return text
+    return str(entry.chat_id)
+
 
 class ContactBook:
     """SQLite-backed address book that survives refreshes."""

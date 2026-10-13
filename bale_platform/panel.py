@@ -27,7 +27,7 @@ from aiohttp import web
 from bale_platform import panel_auth
 from bale_platform import panel_ui as ui
 from bale_platform.analysis import analyze_concerns, classify_text
-from bale_platform.contact_store import ContactBook, refresh_book
+from bale_platform.contact_store import ContactBook, entry_display_name, refresh_book
 from bale_platform.outbound import (
     TARGET_CHAT_ID,
     TARGET_PHONE,
@@ -241,7 +241,14 @@ def _make_sync_runner(
         from bale_platform.inbox import sync_dialog_history
 
         store = state.store()
+        book = state.book()
         async with bale_client() as client:
+            job.log(f"# refreshing contact book ({book.path}) …")
+            counts = await refresh_book(book, client, dialog_limit=dialog_limit)
+            summary = ", ".join(
+                f"{key}={value}" for key, value in counts.items() if key != "notes"
+            )
+            job.log(f"# contacts: {summary}")
             saved = await sync_dialog_history(
                 client,
                 store,
@@ -333,8 +340,23 @@ def _utc_day_start_ms() -> int:
     return int((now - (now % 86400)) * 1000)
 
 
-def _name_map(book: ContactBook) -> Dict[str, str]:
-    return {str(entry.chat_id): entry.name for entry in book.all()}
+def _name_map(
+    book: ContactBook,
+    store: SupportStore | None = None,
+    *,
+    chat_ids: List[str] | None = None,
+) -> Dict[str, str]:
+    out = {str(entry.chat_id): entry_display_name(entry) for entry in book.all()}
+    if store is None:
+        return out
+    ids = sorted(set(chat_ids or []) | set(out.keys()))
+    if not ids:
+        return out
+    for cid, label in store.labels(ids).items():
+        text = (label or "").strip()
+        if text and text != cid:
+            out[cid] = text
+    return out
 
 
 def _direction_badge(direction: str) -> str:
@@ -388,7 +410,7 @@ async def h_dashboard(request: web.Request) -> web.Response:
     messages = store.recent_messages(limit=5000)
     incoming = sum(1 for m in messages if m.direction == "in")
     today = sum(1 for m in messages if m.date_ms >= _utc_day_start_ms())
-    names = _name_map(book)
+    names = _name_map(book, store, chat_ids=[m.chat_id for m in messages])
     summary = analyze_concerns(messages, incoming_only=True)
 
     stats = (
@@ -660,7 +682,6 @@ def _int_query(request: web.Request, name: str, default: int) -> int:
 async def h_inbox(request: web.Request) -> web.Response:
     state: PanelState = request.app[STATE_KEY]
     store = state.store()
-    names = _name_map(state.book())
     csrf = request.get("csrf", "")
 
     buckets: Dict[str, Dict[str, Any]] = {}
@@ -672,9 +693,12 @@ async def h_inbox(request: web.Request) -> web.Response:
         ):
             bucket["last"] = message
 
+    names = _name_map(state.book(), store, chat_ids=list(buckets.keys()))
     rows = []
     for chat_id, bucket in sorted(
-        buckets.items(), key=lambda kv: kv[1]["last"].date_ms, reverse=True
+        buckets.items(),
+        key=lambda kv: kv[1]["last"].date_ms if kv[1]["last"] else 0,
+        reverse=True,
     )[:40]:
         last: Optional[StoredMessage] = bucket["last"]
         rows.append(
@@ -765,7 +789,6 @@ async def h_inbox_live(request: web.Request) -> web.Response:
 async def h_messages(request: web.Request) -> web.Response:
     state: PanelState = request.app[STATE_KEY]
     store = state.store()
-    names = _name_map(state.book())
     chat = request.query.get("chat", "").strip()
     direction = request.query.get("direction", "").strip()
     limit = _int_query(request, "limit", 100)
@@ -774,6 +797,7 @@ async def h_messages(request: web.Request) -> web.Response:
     if direction in ("in", "out"):
         messages = [m for m in messages if m.direction == direction]
     messages = messages[:limit]
+    names = _name_map(state.book(), store, chat_ids=[m.chat_id for m in messages])
 
     rows = [
         (

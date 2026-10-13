@@ -152,6 +152,13 @@ Use **`recipient`** or **`recipients`**, not both. Duplicate phones/user IDs in 
 
 **`ttl_seconds`** — optional; default `BALE_DEFAULT_TTL_S` (86400), max 7 days.
 
+**`mode`** — optional, `send` (default) or `reply`. Reply mode is for answering someone who wrote to us (the support inbox):
+
+- recipient must be `bale_user_id`
+- that user must have sent us a message within `BALE_REPLY_WINDOW_H` (default 24h), otherwise `422 reply_window_closed`
+- paced as a live conversation (`BALE_REPLY_*` below) instead of the outreach caps; quiet hours are skipped; global hourly/daily caps and the circuit breaker still apply
+- once sent, the reply is written to the support inbox store, so it shows up in `/v1/inbox/events`
+
 ### Responses
 
 | Status | Meaning |
@@ -220,6 +227,36 @@ Terminal error codes include: `recipient_not_found`, `recipient_not_on_bale`, `b
 
 Auth required. Clears the circuit breaker and resumes sending (does not clear `BALE_SENDING_PAUSED` env kill switch).
 
+## `GET /v1/inbox/events?after=<seq>&limit=200`
+
+Auth required. Private-chat messages from the support inbox store, oldest first, after a cursor. Consumers (the tech-support unified inbox) keep `next_after` and poll again with it. Every stored message gets a monotonic `seq` when first seen; edits and history re-syncs keep the original `seq`, so nothing is replayed.
+
+```json
+{
+  "events": [
+    {
+      "seq": 812,
+      "chat_id": "123456",
+      "message_id": 99,
+      "direction": "in",
+      "kind": "text",
+      "text": "سلام، کلاس امروز ساعت چنده؟",
+      "date_ms": 1760000000000,
+      "sender_id": "123456",
+      "chat": {"name": "Sara Ahmadi", "username": "", "phone": null}
+    }
+  ],
+  "next_after": 812,
+  "has_more": false
+}
+```
+
+`kind`: `text`, `photo`, `video`, `voice`, `audio`, `file`, `sticker`, `gift`. Media without a caption carries a Persian placeholder in `text` (e.g. `[پیام صوتی]`); media bytes are not exposed. `chat.name` comes from the sender's Bale profile (looked up once per chat) or the local contact book.
+
+## `GET /v1/inbox/chats/{chat_id}/history?limit=100`
+
+Auth required. Last `limit` stored messages of one chat, oldest first, same event shape. Used to backfill a conversation the first time it is opened.
+
 ## Environment variables
 
 | Variable | Default | Purpose |
@@ -247,4 +284,9 @@ Auth required. Clears the circuit breaker and resumes sending (does not clear `B
 | `BALE_ALLOW_CONTACT_IMPORT` | `false` | Contact import on lookup |
 | `BALE_QUIET_HOURS` | _(off)_ | e.g. `22:00-07:00` Asia/Tehran |
 | `BALE_BREAKER_ERRORS` | `3` | Consecutive errors before pause |
-| `BALE_API_RECORD_IN_INBOX` | `false` | Mirror API sends into support inbox DB |
+| `BALE_API_RECORD_IN_INBOX` | `false` | Mirror non-reply API sends into support inbox DB (replies are always mirrored) |
+| `BALE_REPLY_WINDOW_H` | `24` | Reply mode allowed only within this many hours of the user's last message |
+| `BALE_REPLY_GLOBAL_MIN_INTERVAL_S` | `1.5` | Global min gap before a reply |
+| `BALE_REPLY_JITTER_S` | `1.5` | Random extra delay for replies |
+| `BALE_REPLY_MIN_INTERVAL_S` | `3` | Per-recipient min gap between replies |
+| `BALE_REPLY_MAX_PER_HOUR` | `60` | Per-recipient hourly reply cap |

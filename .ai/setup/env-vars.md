@@ -11,7 +11,8 @@ Set automatically by `activate.ps1` / `activate.sh` for local dev.
 | `BALE_CONTACTS_PATH` | `data/contacts.sqlite` | Local contact book |
 | `BALE_OBSERVE_ONLY` | `true` | No auto-reply |
 | `BALE_API_ENABLED` | `false` | HTTP API + outbox worker |
-| `BALE_ADAPTER_API_TOKENS` | _(empty)_ | Comma-separated API bearer tokens |
+| `BALE_ADAPTER_API_TOKENS` | _(empty)_ | Comma-separated API bearer tokens — **`.env.secrets` only** (reloaded live by the API) |
+| `BALE_SECRETS_FILE` | `.env.secrets` | Path to secrets file (VPS: `/opt/bale-adapter/.env.secrets`) |
 | `BALE_OUTBOX_PATH` | `data/outbox.sqlite` | Outbound queue DB |
 | `BALE_PHONE_PEPPER` | _(empty)_ | Phone cache HMAC (set in `.env.secrets` on VPS) |
 | `PYTHONIOENCODING` | `utf-8` (Windows) | Emoji in login |

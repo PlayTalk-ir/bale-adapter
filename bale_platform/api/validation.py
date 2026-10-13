@@ -129,7 +129,23 @@ def validate_post_body(body: dict, default_ttl: int, max_ttl: int) -> Tuple[Opti
         return None, _err("recipient_invalid", "invalid ttl_seconds", {})
     if ttl < 1 or ttl > max_ttl:
         return None, _err("recipient_invalid", "ttl_seconds out of range", {})
+    mode = body.get("mode", "send") or "send"
+    if mode not in ("send", "reply"):
+        return None, _err("mode_invalid", "mode must be send or reply", {})
     multi = "recipients" in body and body.get("recipients") is not None
+    if mode == "reply":
+        if multi or len(recipients) != 1:
+            return None, _err(
+                "recipient_invalid",
+                "reply mode supports one recipient.bale_user_id",
+                {},
+            )
+        if recipients[0]["type"] != "bale_user_id":
+            return None, _err(
+                "recipient_invalid",
+                "reply mode needs recipient.bale_user_id",
+                {},
+            )
     items = []
     for rec in recipients:
         if multi:
@@ -148,6 +164,7 @@ def validate_post_body(body: dict, default_ttl: int, max_ttl: int) -> Tuple[Opti
         "idempotency_key": key,
         "meta": meta,
         "ttl_seconds": ttl,
+        "mode": mode,
         "multi": multi,
         "items": items,
     }, None

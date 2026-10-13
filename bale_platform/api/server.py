@@ -30,7 +30,7 @@ from bale_platform.api_config import ApiSettings
 from bale_platform import panel_auth
 from bale_platform.contact_store import ContactBook
 from bale_platform.outbox.store import OutboxStore
-from bale_platform.store import StoredMessage, SupportStore
+from bale_platform.store import StoredMessage, SupportStore, is_private_chat_type
 
 logger = logging.getLogger("bale.api")
 
@@ -252,16 +252,31 @@ class ApiRuntime:
             value = default
         return max(1, min(value, maximum))
 
+    def _reply_window_open(self, bale_user_id: str) -> bool:
+        if self.inbox is None:
+            return False
+        last_ms = self.inbox.last_incoming_ms(str(bale_user_id))
+        if last_ms is None:
+            return False
+        return self.clock() * 1000 - last_ms <= self.settings.reply_window_h * 3600 * 1000
+
     def _chat_blob(self, chat_id: str) -> dict:
+        from bale_platform.contact_store import entry_display_name
+
         name = ""
         username = ""
+        if self.inbox is not None:
+            label = self.inbox.get_label(str(chat_id))
+            if label and label.strip() and label.strip() != str(chat_id):
+                name = label.strip()
         if self.contacts is not None:
             try:
                 entry = self.contacts.get(chat_id)
             except (TypeError, ValueError):
                 entry = None
             if entry is not None:
-                name = entry.name or entry.local_name or entry.profile_name or ""
+                if not name:
+                    name = entry_display_name(entry)
                 username = entry.username or ""
         return {"name": name, "username": username, "phone": None}
 
@@ -292,6 +307,7 @@ class ApiRuntime:
             after = 0
         limit = self._limit(request, 200, 1000)
         rows = self.inbox.events_after(after, limit) if self.inbox is not None else []
+        rows = [r for r in rows if is_private_chat_type(r.chat_type)]
         return web.json_response(
             {
                 "events": self._events_payload(rows),
@@ -327,6 +343,15 @@ class ApiRuntime:
         norm, err = validate_post_body(body, self.settings.default_ttl_s, self.settings.max_ttl_s)
         if err:
             return web.json_response({"error": err["error"]}, status=err["status"])
+        if norm.get("mode") == "reply":
+            uid = norm["items"][0]["recipient"]["secret"]["bale_user_id"]
+            if not self._reply_window_open(str(uid)):
+                return self._error(
+                    "reply_window_closed",
+                    "recipient has not messaged us recently; reply mode is not allowed",
+                    {"window_hours": self.settings.reply_window_h},
+                    status=422,
+                )
         from bale_platform.outbox.store import OutboxStore as OS
 
         items = norm["items"]
@@ -392,6 +417,7 @@ class ApiRuntime:
                 recipient_secret=json.dumps(rec["secret"]),
                 expires_at=expires_at,
                 now=now,
+                mode=norm.get("mode", "send"),
             )
             logger.info(
                 "queued message_id=%s idempotency_key=%s text_len=%d",

@@ -8,7 +8,7 @@ Path: `data/support_inbox.sqlite` (override: `BALE_STORE_PATH`)
 
 **agent_acks** — agent_id, chat_id, last_message_id, acked_at
 
-**chat_labels** — reserved for future categorization
+**chat_labels** — display names per chat (runner on inbound, backfill on `sync`)
 
 ## Per-agent unread
 

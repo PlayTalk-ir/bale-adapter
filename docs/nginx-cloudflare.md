@@ -14,13 +14,25 @@ Manual dashboard alternative:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| A | `bale-adaptor` | `5.42.223.209` | **Proxied** (orange cloud) |
+| A | `bale-adaptor` | `5.42.223.209` | **DNS only** (grey cloud) for staging; see §2 for orange cloud |
 
 ## 2. Cloudflare SSL/TLS
 
-Origin uses **Let's Encrypt** (`certbot` webroot → `/etc/letsencrypt/live/bale-adaptor.boostsho.ir/`). Set Cloudflare encryption to **Full (strict)**.
+Origin uses **Let's Encrypt** (`certbot` webroot → `/etc/letsencrypt/live/bale-adaptor.boostsho.ir/`).
 
-Also enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashboard.
+### Proxied (orange cloud) — 525 on this VPS
+
+Cloudflare’s network often **cannot complete TLS to the origin on port 443** (error **525**), while direct clients to `5.42.223.209:443` work fine. nginx therefore serves the app on **port 80** as well (see `deploy/nginx/bale-adaptor.boostsho.ir.conf`).
+
+To use **proxied** DNS, set Cloudflare **SSL/TLS → Overview → Encryption mode** to **Flexible** (edge HTTPS → origin HTTP :80). The API token in `.env.cloudflare` can edit DNS but may not change SSL mode (403); use the dashboard if needed.
+
+Alternative long-term fixes: **Cloudflare Tunnel** (`cloudflared`) or **DNS only** (grey cloud).
+
+### DNS only (grey cloud) — recommended for staging now
+
+Set the `bale-adaptor` A record to **DNS only** (grey cloud). Clients connect directly to the origin with Let’s Encrypt on **443**.
+
+Also enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashboard when using proxied mode.
 
 ## 3. nginx routing (same hostname)
 
@@ -41,6 +53,11 @@ install -m 0644 deploy/nginx/snippets/cloudflare-realip.conf /etc/nginx/snippets
 install -m 0644 deploy/nginx/snippets/cloudflare-allow.conf /etc/nginx/snippets/
 install -m 0644 deploy/nginx/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-available/
 ln -sf /etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-enabled/
+```
+
+On **steach-stage-vps**, install the host catch-all first so unknown hostnames never proxy to Bale (`vps-management/scripts/stage-nginx-default-catchall.sh`).
+
+```bash
 nginx -t && systemctl reload nginx
 ```
 

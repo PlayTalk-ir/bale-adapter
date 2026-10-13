@@ -21,6 +21,11 @@ class RateLimitConfig:
     recipient_max_per_hour: int = 5
     recipient_max_per_day: int = 15
     quiet_hours: Optional[str] = None  # e.g. "22:00-07:00"
+    # Replies to someone who just wrote in: live conversation pace, not outreach pace.
+    reply_global_min_interval_s: float = 1.5
+    reply_jitter_s: float = 1.5
+    reply_min_interval_s: float = 3.0
+    reply_max_per_hour: int = 60
 
 
 class SendRateLimiter:
@@ -55,16 +60,27 @@ class SendRateLimiter:
             return start_m <= minutes < end_m
         return minutes >= start_m or minutes < end_m
 
-    def defer_seconds(self, bale_user_id: int) -> float:
-        """Seconds to wait before send; 0 if allowed now."""
+    def defer_seconds(self, bale_user_id: int, *, reply: bool = False) -> float:
+        """Seconds to wait before send; 0 if allowed now.
+
+        Replies skip quiet hours (the customer is awake and waiting) and use the
+        reply pacing; global hourly/daily caps still apply to every send.
+        """
         now = self._clock()
-        if self._in_quiet_hours(now):
+        if not reply and self._in_quiet_hours(now):
             return 60.0
 
         global_key = "global"
         last = self._store.last_send_ts("global", global_key)
         if last is not None:
-            wait = self._cfg.send_min_interval_s + self._rng.uniform(0, self._cfg.send_jitter_s)
+            if reply:
+                wait = self._cfg.reply_global_min_interval_s + self._rng.uniform(
+                    0, self._cfg.reply_jitter_s
+                )
+            else:
+                wait = self._cfg.send_min_interval_s + self._rng.uniform(
+                    0, self._cfg.send_jitter_s
+                )
             gap = now - last
             if gap < wait:
                 return wait - gap
@@ -76,6 +92,12 @@ class SendRateLimiter:
 
         rkey = str(bale_user_id)
         last_r = self._store.last_send_ts("recipient", rkey)
+        if reply:
+            if last_r is not None and now - last_r < self._cfg.reply_min_interval_s:
+                return self._cfg.reply_min_interval_s - (now - last_r)
+            if self._store.count_sends("recipient", rkey, now - 3600) >= self._cfg.reply_max_per_hour:
+                return 45.0
+            return 0.0
         if last_r is not None and now - last_r < self._cfg.recipient_min_interval_s:
             return self._cfg.recipient_min_interval_s - (now - last_r)
         if self._store.count_sends("recipient", rkey, now - 3600) >= self._cfg.recipient_max_per_hour:
