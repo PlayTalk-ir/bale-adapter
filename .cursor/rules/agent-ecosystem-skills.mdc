@@ -1,0 +1,18 @@
+---
+description: Bale adapter — Cloudflare and observability agent skills (skills.sh)
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Agent skills (bale-adapter)
+
+Restore: `npx skills experimental_install -y`
+
+| Skill | Use when |
+| --- | --- |
+| workers-best-practices | Workers, edge logic, wrangler patterns |
+| cf-cli | Cloudflare CLI, DNS, R2 (secrets: `j:/dev/minecraft/.env.cloudflare`) |
+| observability-and-instrumentation | Logging, metrics, tracing for adapter code |
+
+Also follow `.cursor/rules/ai-docs.mdc` for Bale inbox/messaging tasks.
