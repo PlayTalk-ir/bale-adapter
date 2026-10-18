@@ -63,30 +63,27 @@ python scripts/mcp_server.py http --port 8790
 | `adapter_health` | `GET /healthz` | Process is up |
 | `adapter_ready` | `GET /readyz` | Session, queue depth, pause, send mode |
 | `session_status` | `GET /v1/session` | `qr` is always null |
-| `list_inbox` | `GET /v1/inbox/events` | Shared private-chat feed, not per-agent unread |
+| `list_inbox` | `GET /v1/inbox/events` | Shared private-chat feed |
+| `list_unread` | `GET /v1/inbox/unread` | Per-agent unread (`agent_acks`) |
 | `read_chat` | `GET /v1/inbox/chats/{chat_id}/history` | Does not mark read |
+| `ack_chat` | `POST /v1/inbox/ack` | Idempotent cursor update; not a Bale send |
 | `search_contacts` | `GET /v1/contacts` | Full book, filtered locally |
+| `kb_facts` | `GET /v1/kb/facts` | Stored facts; phones masked |
+| `faq_topics` | `GET /v1/analysis/faq` | Summary of stored messages; no Bale sync |
 | `message_status` | `GET /v1/messages/...` | Phones stay masked |
 | `send_message` | `POST /v1/messages` | Queues **one** outbox row |
 
 `send_message` is annotated `readOnlyHint=false`, `destructiveHint=true`, `idempotentHint=false`, `openWorldHint=true`. Clients should ask for confirmation. The call does not deliver the Bale message itself: the outbox worker does, under the existing rate limits and `BALE_SEND_MODE`. Pass a stable `idempotency_key` and reuse it if you retry the same send.
 
-Read tools are annotated read-only. They do not ack chats.
+`ack_chat` is annotated `readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=true`. It only moves that agent's read cursor.
 
-## Not exposed (needs an API decision)
+`faq_topics` summarizes messages already in the inbox database. It does not sync from Bale.
 
-These exist on the CLI or in local files. There is no HTTP route, and the MCP server does not read SQLite or the session to imitate them.
+Read tools are annotated read-only.
 
-| Wanted capability | Today | Gap |
-|-------------------|--------|-----|
-| Per-agent unread | `support_cli.py inbox --agent` | No route. `GET /v1/inbox/events` is a shared seq cursor, not `agent_acks`. |
-| Mark read / ack | `support_cli.py ack` | No route. Acks are written only in the inbox store. |
-| KB facts | `kb/learned_facts.mdl` | No route. |
-| FAQ topics | `analyze` / `collect` | No route. `analysis.py` runs on the local inbox DB. |
+## Not exposed
 
-Also left unexposed on purpose: `POST /v1/contacts/import-roster` (live Bale lookups) and `POST /v1/admin/resume` (clears the circuit breaker). `POST /v1/messages` accepts up to 50 recipients; `send_message` allows one so confirmation is about a single person.
-
-A future API could add, for example, `GET /v1/inbox/unread?agent=`, `POST /v1/inbox/ack`, `GET /v1/kb/facts`, and `GET /v1/analysis/faq`. Those are not implemented.
+`POST /v1/contacts/import-roster` (live Bale lookups) and `POST /v1/admin/resume` (clears the circuit breaker) stay off the MCP surface. `POST /v1/messages` accepts up to 50 recipients; `send_message` allows one so confirmation is about a single person.
 
 ## Cursor
 

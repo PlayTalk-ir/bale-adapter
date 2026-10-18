@@ -14,7 +14,7 @@ What support AI agents can do via terminal (after activate + session exists).
 
 ## MCP
 
-Optional. `python -m bale_platform.mcp_server` calls the HTTP API with a bearer token ([docs/mcp.md](../../docs/mcp.md)). It can list the shared inbox feed, read a chat, search contacts, and queue one outbox send. Per-agent unread, ack, KB facts, and FAQ mining stay on this CLI until the API grows routes for them.
+Optional. `python -m bale_platform.mcp_server` calls the HTTP API with a bearer token ([docs/mcp.md](../../docs/mcp.md)). It can list per-agent unread, ack a chat, read KB facts, summarize stored FAQ topics, and queue one outbox send. FAQ and unread read the adapter's stored data; they do not sync from Bale.
 
 ## Hard limits
 

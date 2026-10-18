@@ -209,6 +209,156 @@ async def test_reply_mode_rejects_phone_recipient(inbox_client):
     assert r.status == 422
 
 
+def test_ack_at_least_is_monotonic_and_idempotent(tmp_path):
+    store = SupportStore(tmp_path / "inbox.sqlite")
+    first = store.ack_at_least("sara", "42", 3)
+    assert first["unchanged"] is False
+    assert first["message_id"] == 3
+    again = store.ack_at_least("sara", "42", 3)
+    assert again == {
+        "message_id": 3,
+        "acked_at": first["acked_at"],
+        "unchanged": True,
+    }
+    older = store.ack_at_least("sara", "42", 1)
+    assert older["unchanged"] is True
+    assert older["message_id"] == 3
+    newer = store.ack_at_least("sara", "42", 8)
+    assert newer["unchanged"] is False
+    assert newer["message_id"] == 8
+
+
+async def test_unread_and_ack_per_agent(inbox_client):
+    client, inbox, outbox, _ = inbox_client
+    inbox.upsert_message(_msg("42", 1, "salam", date_ms=1000))
+    inbox.upsert_message(_msg("42", 2, "kelas?", date_ms=2000))
+    inbox.upsert_message(_msg("42", 3, "still open", date_ms=3000))
+    inbox.upsert_message(_msg("42", 4, "our reply", date_ms=4000), direction="out")
+    inbox.upsert_message(_msg("-9", 1, "group", chat_type="ChatType.GROUP", date_ms=1500))
+    outbox.set_inbox_chat_phone(42, "989120000000")
+
+    denied = await client.get("/v1/inbox/unread?agent=sara")
+    assert denied.status == 401
+    missing = await client.get("/v1/inbox/unread", headers=AUTH)
+    assert missing.status == 422
+
+    listed = await client.get("/v1/inbox/unread?agent=sara", headers=AUTH)
+    assert listed.status == 200
+    body = await listed.json()
+    assert body["agent"] == "sara"
+    assert [event["message_id"] for event in body["events"]] == [3, 2, 1]
+    assert body["events"][0]["chat"]["phone"] == "09120000000"
+    assert all(event["chat_id"] == "42" for event in body["events"])
+
+    ack = await client.post(
+        "/v1/inbox/ack",
+        headers=AUTH,
+        json={"agent": "sara", "chat_id": "42", "message_id": 2},
+    )
+    assert ack.status == 200
+    acked = await ack.json()
+    assert acked["unchanged"] is False
+    assert acked["message_id"] == 2
+
+    replay = await client.post(
+        "/v1/inbox/ack",
+        headers=AUTH,
+        json={"agent": "sara", "chat_id": "42", "message_id": 2},
+    )
+    replayed = await replay.json()
+    assert replayed["unchanged"] is True
+    assert replayed["acked_at"] == acked["acked_at"]
+    assert replayed["message_id"] == 2
+
+    older = await client.post(
+        "/v1/inbox/ack",
+        headers=AUTH,
+        json={"agent": "sara", "chat_id": "42", "message_id": 1},
+    )
+    assert (await older.json())["message_id"] == 2
+
+    left = await client.get("/v1/inbox/unread?agent=sara", headers=AUTH)
+    assert [event["message_id"] for event in (await left.json())["events"]] == [3]
+    other = await client.get("/v1/inbox/unread?agent=erfan", headers=AUTH)
+    assert len((await other.json())["events"]) == 3
+
+    bad = await client.post(
+        "/v1/inbox/ack",
+        headers=AUTH,
+        json={"agent": "sara", "chat_id": "../x", "message_id": 1},
+    )
+    assert bad.status == 422
+
+
+async def test_faq_reads_stored_messages_only(inbox_client):
+    client, inbox, *_ = inbox_client
+    inbox.upsert_message(_msg("42", 1, "قیمت کلاس چنده؟"))
+    inbox.upsert_message(_msg("42", 2, "server login error"))
+    response = await client.get("/v1/analysis/faq?limit=50", headers=AUTH)
+    assert response.status == 200
+    body = await response.json()
+    assert body["source"] == "inbox_store"
+    assert body["live_bale"] is False
+    assert body["total_messages"] == 2
+    categories = {row["category"]: row["count"] for row in body["categories"]}
+    assert categories["sales"] == 1
+    assert categories["technical"] == 1
+    assert body["faq_topic_hints"]
+    unauth = await client.get("/v1/analysis/faq")
+    assert unauth.status == 401
+
+
+async def test_kb_facts_search_masks_phones(inbox_client, tmp_path):
+    client, *_ = inbox_client
+    facts = tmp_path / "learned_facts.mdl"
+    facts.write_text(
+        "\n".join(
+            [
+                "## Extracted 2026-10-01 10:00 | sender=runner",
+                "  [course_level] 3",
+                "  [phone] 09120000000",
+                "",
+                "## Extracted 2026-10-02 11:00 | sender=runner",
+                "  [pricing] 100",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    wired = False
+    for route in client.app.router.routes():
+        runtime = getattr(route.handler, "__self__", None)
+        if runtime is not None and hasattr(runtime, "facts_file"):
+            runtime.facts_file = facts
+            wired = True
+            break
+    assert wired
+
+    response = await client.get("/v1/kb/facts?q=pricing", headers=AUTH)
+    assert response.status == 200
+    body = await response.json()
+    assert body["count"] == 1
+    assert body["facts"][0]["items"] == [{"category": "pricing", "value": "100"}]
+
+    phones = await client.get("/v1/kb/facts?q=phone", headers=AUTH)
+    payload = await phones.json()
+    rendered = str(payload)
+    assert "09120000000" not in rendered
+    assert "989120000000" not in rendered
+    assert payload["facts"][0]["items"][1]["value"].startswith("98912***")
+    assert (await client.get("/v1/kb/facts")).status == 401
+
+
+def test_openapi_lists_support_routes():
+    from bale_platform.api.openapi_spec import build_openapi
+
+    paths = build_openapi()["paths"]
+    assert "/v1/inbox/unread" in paths
+    assert "/v1/inbox/ack" in paths
+    assert "/v1/kb/facts" in paths
+    assert "/v1/analysis/faq" in paths
+
+
 def test_reply_pacing_is_relaxed(tmp_path):
     store = OutboxStore(tmp_path / "o.sqlite")
     now = [1_000_000.0]

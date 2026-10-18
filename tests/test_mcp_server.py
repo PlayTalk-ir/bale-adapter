@@ -383,6 +383,55 @@ def test_client_does_not_follow_redirects():
     client.close()
 
 
+def test_unread_ack_facts_and_faq_call_the_api():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, dict(request.url.params), request.content))
+        if request.url.path == "/v1/inbox/unread":
+            return httpx.Response(200, json={"agent": "sara", "events": [], "count": 0, "truncated": False})
+        if request.url.path == "/v1/inbox/ack":
+            return httpx.Response(
+                200,
+                json={
+                    "agent": "sara",
+                    "chat_id": "42",
+                    "message_id": 9,
+                    "requested_message_id": 9,
+                    "acked_at": "2026-10-18T00:00:00+00:00",
+                    "unchanged": True,
+                },
+            )
+        if request.url.path == "/v1/kb/facts":
+            return httpx.Response(
+                200,
+                json={"facts": [{"items": [{"category": "phone", "value": "98912***0000"}]}], "count": 1},
+            )
+        if request.url.path == "/v1/analysis/faq":
+            return httpx.Response(
+                200,
+                json={"source": "inbox_store", "live_bale": False, "categories": [], "faq_topic_hints": []},
+            )
+        raise AssertionError(request.url.path)
+
+    server = _server(handler)
+    assert _fn(server, "list_unread")(agent="sara", limit=10)["count"] == 0
+    acked = _fn(server, "ack_chat")(agent="sara", chat_id="42", message_id=9)
+    assert acked["unchanged"] is True
+    facts = _fn(server, "kb_facts")(query="phone", limit=5)
+    assert facts["facts"][0]["items"][0]["value"] == "98912***0000"
+    faq = _fn(server, "faq_topics")(limit=20, since_ms=0)
+    assert faq["live_bale"] is False
+    assert seen[0][0:3] == ("GET", "/v1/inbox/unread", {"agent": "sara", "limit": "10"})
+    assert seen[1][0:2] == ("POST", "/v1/inbox/ack")
+    assert json.loads(seen[1][3]) == {"agent": "sara", "chat_id": "42", "message_id": 9}
+    assert seen[2][0:3] == ("GET", "/v1/kb/facts", {"limit": "5", "q": "phone"})
+    assert seen[3][0:3] == ("GET", "/v1/analysis/faq", {"limit": "20", "since_ms": "0"})
+
+    with pytest.raises(ToolError, match="agent"):
+        _fn(server, "ack_chat")(agent=" ", chat_id="42", message_id=1)
+
+
 def test_unreachable_adapter_is_a_tool_error():
     def handler(_request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
@@ -403,6 +452,10 @@ async def test_tool_annotations_mark_send_as_side_effect():
         "session_status",
         "list_inbox",
         "read_chat",
+        "list_unread",
+        "ack_chat",
+        "kb_facts",
+        "faq_topics",
         "search_contacts",
         "message_status",
         "send_message",
@@ -422,13 +475,21 @@ async def test_tool_annotations_mark_send_as_side_effect():
     assert "outbox" in description
     assert "confirm" in description
     assert "side effect" in description
-    for name in expected - {"send_message"}:
+    ack = tools["ack_chat"]
+    assert ack.annotations is not None
+    ack_wire = ack.annotations.model_dump(by_alias=True, exclude_none=True)
+    assert ack_wire["readOnlyHint"] is False
+    assert ack_wire["destructiveHint"] is False
+    assert ack_wire["idempotentHint"] is True
+    assert "idempotent" in (ack.description or "").lower()
+    for name in expected - {"send_message", "ack_chat"}:
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.read_only_hint is True
         assert annotations.destructive_hint is False
     assert "OTP" in INSTRUCTIONS
-    assert "per-agent" in INSTRUCTIONS
+    assert "list_unread" in INSTRUCTIONS
+    assert "ack_chat" in INSTRUCTIONS
     assert server._lowlevel_server.instructions == INSTRUCTIONS
 
 

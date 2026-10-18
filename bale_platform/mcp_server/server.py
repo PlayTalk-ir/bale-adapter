@@ -27,9 +27,10 @@ Read tools return the API JSON as-is. Message status masks phone numbers. \
 Contact rows include a phone only when the API already stored one. Do not copy \
 customer message text into git, tickets, or public docs unless a human asks.
 
-list_inbox is the shared private-chat event feed (a seq cursor). It is not \
-per-agent unread. Per-agent unread, mark-read/ack, KB facts, and FAQ topic \
-mining are not HTTP endpoints, so they are not tools here.
+list_inbox is the shared private-chat event feed (a seq cursor). Per-agent \
+unread is list_unread. ack_chat marks a chat handled for one agent; it does \
+not send a Bale message. kb_facts and faq_topics read data the adapter already \
+stored. They do not log in and they do not sync from Bale.
 
 send_message is a side effect. It queues one message in the outbox; the worker \
 delivers it under the adapter rate limits, quiet hours, and send mode. Confirm \
@@ -39,6 +40,14 @@ it to draft or preview.
 
 _READ = ToolAnnotations(
     read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
+)
+
+_ACK = ToolAnnotations(
+    title="Mark chat read for an agent",
+    read_only_hint=False,
     destructive_hint=False,
     idempotent_hint=True,
     open_world_hint=True,
@@ -112,8 +121,8 @@ def build_server(client: AdapterApiClient) -> MCPServer:
         annotations=_READ,
         description=(
             "Stored private-chat messages after a seq cursor (GET /v1/inbox/events), oldest first. "
-            "Pass next_after back in as after to page. This is the shared inbox feed, not "
-            "per-agent unread: the HTTP API has no agent ack state. Message text is included "
+            "Pass next_after back in as after to page. This is the shared inbox feed. "
+            "For one support agent's unread, use list_unread. Message text is included "
             "because the API returns it; do not commit that text. "
             "limit default 50, max 1000."
         ),
@@ -144,6 +153,92 @@ def build_server(client: AdapterApiClient) -> MCPServer:
             lambda: client.get_json(
                 f"/v1/inbox/chats/{peer}/history",
                 params={"limit": capped},
+            )
+        )
+
+    @server.tool(
+        title="Per-agent unread",
+        annotations=_READ,
+        description=(
+            "Incoming private-chat messages this support agent has not acked "
+            "(GET /v1/inbox/unread). Same event shape as list_inbox, newest first. "
+            "Backed by agent_acks in the adapter inbox store. Does not contact Bale "
+            "and does not mark anything read. agent is the support id (for example sara). "
+            "limit default 50, max 200. Message text is included; do not commit it."
+        ),
+    )
+    def list_unread(agent: str, limit: int = 50) -> dict[str, Any]:
+        who = _agent(agent)
+        capped = _clamp(limit, default=50, maximum=200)
+        return run(
+            lambda: client.get_json(
+                "/v1/inbox/unread",
+                params={"agent": who, "limit": capped},
+            )
+        )
+
+    @server.tool(
+        name="ack_chat",
+        title="Mark chat read for an agent",
+        annotations=_ACK,
+        description=(
+            "Record that this support agent has handled one chat up to message_id "
+            "(POST /v1/inbox/ack). This updates the per-agent unread cursor only. "
+            "It does not send a Bale message, delete messages, or contact Bale.\n\n"
+            "Idempotent: repeating the same agent, chat_id, and message_id leaves the "
+            "stored cursor unchanged. An older message_id does not move the cursor backward.\n\n"
+            "Use the agent id the human gave you. chat_id and message_id come from list_unread "
+            "or read_chat. Confirm the agent id before calling if it was not already set."
+        ),
+    )
+    def ack_chat(agent: str, chat_id: str, message_id: int) -> dict[str, Any]:
+        who = _agent(agent)
+        peer = _chat_id(chat_id)
+        mid = _positive_int(message_id, "message_id")
+        return run(
+            lambda: client.post_json(
+                "/v1/inbox/ack",
+                {"agent": who, "chat_id": peer, "message_id": mid},
+            )
+        )
+
+    @server.tool(
+        title="KB facts",
+        annotations=_READ,
+        description=(
+            "Structured facts already extracted into kb/learned_facts.mdl "
+            "(GET /v1/kb/facts), newest first. Does not read raw customer messages "
+            "and does not extract new facts. Optional query matches category, value, "
+            "or sender. Phone-like values are masked by the API. limit default 50, max 200."
+        ),
+    )
+    def kb_facts(query: str = "", limit: int = 50) -> dict[str, Any]:
+        capped = _clamp(limit, default=50, maximum=200)
+        params: dict[str, Any] = {"limit": capped}
+        text = _blank(query)
+        if text:
+            params["q"] = text
+        return run(lambda: client.get_json("/v1/kb/facts", params=params))
+
+    @server.tool(
+        title="FAQ topics",
+        annotations=_READ,
+        description=(
+            "Keyword FAQ summary of messages already stored in the support inbox "
+            "(GET /v1/analysis/faq). Returns category counts, short example clips, "
+            "and faq_topic_hints. source is inbox_store and live_bale is false: "
+            "this does not sync history and does not call Bale. "
+            "limit is how many stored messages to scan (default 200, max 1000). "
+            "Do not commit the example clips."
+        ),
+    )
+    def faq_topics(limit: int = 200, since_ms: int = 0) -> dict[str, Any]:
+        capped = _clamp(limit, default=200, maximum=1000)
+        since = _non_negative(since_ms, "since_ms")
+        return run(
+            lambda: client.get_json(
+                "/v1/analysis/faq",
+                params={"limit": capped, "since_ms": since},
             )
         )
 
@@ -341,3 +436,20 @@ def _chat_id(raw: str) -> str:
     if not _ascii_digits(chat_id):
         raise ToolError("chat_id must be the numeric Bale peer id.")
     return chat_id
+
+
+def _agent(raw: str) -> str:
+    agent = _blank(raw)
+    if not agent or len(agent) > 64 or any(ch.isspace() or ch in "/\\?#" for ch in agent):
+        raise ToolError("agent is required: the support agent id, for example sara.")
+    return agent
+
+
+def _positive_int(value: int, name: str) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ToolError(f"{name} must be an integer.") from exc
+    if number < 1:
+        raise ToolError(f"{name} must be >= 1.")
+    return number

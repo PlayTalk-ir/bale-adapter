@@ -30,3 +30,5 @@ After human finishes a chat:
 ```bash
 python scripts/support_cli.py ack --agent NAME --chat ID --message-id ID
 ```
+
+HTTP: `POST /v1/inbox/ack` uses `ack_at_least` (same or older id is a no-op). `GET /v1/inbox/unread?agent=` lists incoming private messages above that cursor. The CLI `ack` command can still replace the cursor outright.

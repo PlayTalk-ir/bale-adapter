@@ -6,7 +6,9 @@ Thin client of the HTTP API. Code: `bale_platform/mcp_server/`. Entry: `python -
 - Auth: `BALE_MCP_API_TOKEN` as `Authorization: Bearer`. No session file, no inbox/outbox SQLite.
 - `send_message` → `POST /v1/messages` (one recipient). Annotations: destructive, not read-only, not idempotent. Same idempotency key replays; a new key queues again.
 - Read tools return API JSON unchanged (masked phones stay masked).
+- `list_unread` → `GET /v1/inbox/unread`. `ack_chat` → `POST /v1/inbox/ack` (not read-only, not destructive, idempotent).
+- `kb_facts` → `GET /v1/kb/facts`. `faq_topics` → `GET /v1/analysis/faq` (stored messages only; no Bale sync).
 - Contact search downloads `GET /v1/contacts` and filters locally (`normalize_name`).
-- Not wrapped, because the API has no route: per-agent unread, ack, KB facts, FAQ analysis. Also not wrapped: roster import, admin resume.
+- Not wrapped: roster import, admin resume.
 
 VPS unit `systemd/bale-mcp.service` and Compose profile `mcp` are opt-in. `deploy.yml` does not install them.

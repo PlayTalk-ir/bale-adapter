@@ -23,6 +23,8 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
         "tags": [
             {"name": "health"},
             {"name": "inbox"},
+            {"name": "kb"},
+            {"name": "analysis"},
             {"name": "messages"},
             {"name": "admin"},
         ],
@@ -258,6 +260,120 @@ def build_openapi(base_url: str = "/") -> Dict[str, Any]:
                     ],
                     "responses": {
                         "200": {"description": "events, next_after, has_more"},
+                        "401": {"description": "Unauthorized"},
+                    },
+                }
+            },
+            "/v1/inbox/unread": {
+                "get": {
+                    "tags": ["inbox"],
+                    "summary": "Per-agent unread private messages",
+                    "description": (
+                        "Incoming private-chat messages newer than this agent's last ack. "
+                        "Same event shape as the inbox feed, newest first. Does not contact Bale."
+                    ),
+                    "parameters": [
+                        {
+                            "name": "agent",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 50, "maximum": 200},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "agent, events, count, truncated"},
+                        "401": {"description": "Unauthorized"},
+                        "422": {"description": "Invalid agent"},
+                    },
+                }
+            },
+            "/v1/inbox/ack": {
+                "post": {
+                    "tags": ["inbox"],
+                    "summary": "Mark a chat read for one agent",
+                    "description": (
+                        "Idempotent. Advances agent_acks to message_id. Repeating the same "
+                        "or an older id leaves the stored cursor and acked_at unchanged."
+                    ),
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["agent", "chat_id", "message_id"],
+                                    "properties": {
+                                        "agent": {"type": "string"},
+                                        "chat_id": {"type": "string"},
+                                        "message_id": {"type": "integer", "minimum": 1},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Stored ack cursor"},
+                        "401": {"description": "Unauthorized"},
+                        "422": {"description": "Validation error"},
+                        "503": {"description": "Inbox store unavailable"},
+                    },
+                }
+            },
+            "/v1/kb/facts": {
+                "get": {
+                    "tags": ["kb"],
+                    "summary": "Structured KB facts",
+                    "description": (
+                        "Parsed learned_facts.mdl, newest first. Phone-like values are masked. "
+                        "Does not extract new facts."
+                    ),
+                    "parameters": [
+                        {
+                            "name": "q",
+                            "in": "query",
+                            "schema": {"type": "string"},
+                            "description": "Substring match on category, value, or sender",
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 50, "maximum": 200},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "facts, count"},
+                        "401": {"description": "Unauthorized"},
+                    },
+                }
+            },
+            "/v1/analysis/faq": {
+                "get": {
+                    "tags": ["analysis"],
+                    "summary": "FAQ topic summary of stored inbox messages",
+                    "description": (
+                        "Keyword categories and topic hints from the local inbox store. "
+                        "Does not sync or call Bale."
+                    ),
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 200, "maximum": 1000},
+                            "description": "How many stored messages to scan",
+                        },
+                        {
+                            "name": "since_ms",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 0},
+                        },
+                    ],
+                    "responses": {
+                        "200": {"description": "categories and faq_topic_hints"},
                         "401": {"description": "Unauthorized"},
                     },
                 }
