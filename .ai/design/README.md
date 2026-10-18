@@ -13,6 +13,7 @@ AI-maintained implementation design. Update when code behavior changes.
 | [message-flow.md](message-flow.md) | Runner → store → KB |
 | [analysis.md](analysis.md) | Concern categories, FAQ mining |
 | [privacy.md](privacy.md) | What is stored where |
+| [mcp.md](mcp.md) | MCP server over the HTTP API |
 
 ## Update rules
 

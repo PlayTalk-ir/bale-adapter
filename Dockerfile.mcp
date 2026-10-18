@@ -1,0 +1,35 @@
+# Optional MCP sidecar. CI builds ./Dockerfile only (the adapter image).
+# See docs/mcp.md and the Compose profile "mcp".
+#
+# `python -m bale_platform.mcp_server` imports the bale_platform package, so this
+# image installs the adapter runtime deps plus the MCP SDK. It is still a
+# separate image: the adapter Dockerfile and deploy job are unchanged.
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash app
+
+WORKDIR /app
+
+COPY requirements-docker.txt /app/requirements-docker.txt
+RUN pip install --no-cache-dir -r /app/requirements-docker.txt 'mcp>=2,<3'
+
+COPY bale_platform /app/bale_platform
+
+RUN chown -R app:app /app
+
+USER app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    BALE_MCP_API_BASE_URL=http://bale-adapter:8787 \
+    BALE_MCP_HTTP_HOST=127.0.0.1 \
+    BALE_MCP_HTTP_PORT=8790
+
+EXPOSE 8790
+
+CMD ["python", "-m", "bale_platform.mcp_server", "http"]

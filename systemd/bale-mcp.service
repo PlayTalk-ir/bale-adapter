@@ -1,0 +1,31 @@
+# Opt-in MCP sidecar for the Bale adapter HTTP API.
+# deploy.yml does NOT install or enable this unit. See docs/mcp.md.
+#
+# One-time:
+#   ./scripts/bootstrap-mcp.sh
+#   # BALE_MCP_API_TOKEN=... in /opt/bale-adapter/.env.secrets
+#   install -m 0644 systemd/bale-mcp.service /etc/systemd/system/bale-mcp.service
+#   systemctl daemon-reload && systemctl enable --now bale-mcp.service
+
+[Unit]
+Description=PlayTalk Bale adapter MCP server (opt-in, loopback)
+Documentation=https://github.com/PlayTalk-ir/bale-adapter/blob/master/docs/mcp.md
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bale-adapter
+EnvironmentFile=/opt/bale-adapter/.env
+EnvironmentFile=-/opt/bale-adapter/.env.secrets
+Environment=PYTHONPATH=/opt/bale-adapter
+Environment=BALE_MCP_API_BASE_URL=http://127.0.0.1:8787
+Environment=BALE_MCP_HTTP_HOST=127.0.0.1
+Environment=BALE_MCP_HTTP_PORT=8790
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/bale-adapter/venv/bin/python -m bale_platform.mcp_server http
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

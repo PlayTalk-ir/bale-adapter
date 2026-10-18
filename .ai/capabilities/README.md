@@ -12,6 +12,10 @@ What support AI agents can do via terminal (after activate + session exists).
 | Live listen | [runner.md](runner.md) |
 | Admin panel (for humans — no CLI) | [../setup/panel.md](../setup/panel.md) |
 
+## MCP
+
+Optional. `python -m bale_platform.mcp_server` calls the HTTP API with a bearer token ([docs/mcp.md](../../docs/mcp.md)). It can list the shared inbox feed, read a chat, search contacts, and queue one outbox send. Per-agent unread, ack, KB facts, and FAQ mining stay on this CLI until the API grows routes for them.
+
 ## Hard limits
 
 - No OTP / login on behalf of human
