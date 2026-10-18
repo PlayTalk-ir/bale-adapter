@@ -23,4 +23,17 @@ Set automatically by `activate.ps1` / `activate.sh` for local dev.
 
 Full API/outbox knobs: [docs/api.md](../../docs/api.md).
 
+## MCP server (optional)
+
+Not set by `activate.sh`. The MCP process is a client of the HTTP API. See [docs/mcp.md](../../docs/mcp.md).
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BALE_MCP_API_BASE_URL` | `http://127.0.0.1:8787` | Adapter origin |
+| `BALE_MCP_API_TOKEN` | _(required)_ | Bearer token for that API — **not in git** |
+| `BALE_MCP_HTTP_HOST` | `127.0.0.1` | Streamable HTTP bind |
+| `BALE_MCP_HTTP_PORT` | `8790` | Streamable HTTP port |
+| `BALE_MCP_HTTP_ALLOW_REMOTE` | `false` | Allow a non-loopback bind |
+| `BALE_MCP_TIMEOUT_S` | `30` | Per-request timeout |
+
 Production values: `.ai/architecture/deploy.md`

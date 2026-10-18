@@ -10,3 +10,7 @@ When `BALE_API_ENABLED=true`, the runner starts an aiohttp server and an outbox 
 - Staging public URL (Cloudflare proxied): `https://bale-adaptor.boostsho.ir` → nginx → `127.0.0.1:8787`. Setup: [docs/nginx-cloudflare.md](../../docs/nginx-cloudflare.md).
 - Swagger UI at `/v1/docs` (panel username + password, or existing panel session cookie). OpenAPI at `/v1/openapi.json`.
 - Inbox feed for the support panel: `GET /v1/inbox/events` and `GET /v1/inbox/chats/{chat_id}/history`, read from the support inbox DB. `GET /v1/session` reports the userbot session (`qr` is always null).
+- Optional MCP client of this API: [mcp.md](mcp.md) and [docs/mcp.md](../../docs/mcp.md). It does not open the session.
+- Per-agent unread and ack: `GET /v1/inbox/unread`, `POST /v1/inbox/ack` (`ack_at_least`, cursor only moves forward).
+- KB facts: `GET /v1/kb/facts` reads `learned_facts.mdl` and masks phone-like values.
+- FAQ: `GET /v1/analysis/faq` runs `analyze_concerns` on the inbox DB. No Bale sync.

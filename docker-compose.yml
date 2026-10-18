@@ -24,6 +24,28 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # Opt-in. `docker compose up` does not start this. See docs/mcp.md.
+  bale-mcp:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: bale-adapter-mcp:local
+    container_name: bale-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.secrets
+    environment:
+      BALE_MCP_API_BASE_URL: http://bale-adapter:8787
+      BALE_MCP_HTTP_HOST: 127.0.0.1
+      BALE_MCP_HTTP_PORT: "8790"
+    networks:
+      - laravel
+    depends_on:
+      - bale-adapter
+    command: ["python", "-m", "bale_platform.mcp_server", "http"]
+
 networks:
   laravel:
     external: true

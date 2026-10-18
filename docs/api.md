@@ -309,6 +309,45 @@ At most 50 contacts per request; `max_lookups` caps how many are processed (defa
 
 The support panel calls this daily with new roster phones from admin caches (`scripts/lib/inbox/bale-roster-import.mjs`).
 
+## `GET /v1/inbox/unread?agent=<id>&limit=50`
+
+Auth required. Incoming **private** messages newer than this agent's last ack (`agent_acks`), newest first. Same event object as the inbox feed, including `chat.phone` when the adapter already stored one (`09XXXXXXXXX`). Does not call Bale. `limit` default 50, max 200. `truncated` is true when more unread rows exist.
+
+```json
+{"agent": "sara", "events": [], "count": 0, "truncated": false}
+```
+
+`agent` is 1–64 letters, digits, `.`, `_`, or `-`.
+
+## `POST /v1/inbox/ack`
+
+Auth required. Mark one chat handled for one agent. Idempotent and monotonic: the stored cursor only moves forward. Repeating the same `message_id`, or sending an older one, returns the existing row with `unchanged: true` and the same `acked_at`.
+
+```json
+{"agent": "sara", "chat_id": "42", "message_id": 10}
+```
+
+```json
+{
+  "agent": "sara",
+  "chat_id": "42",
+  "message_id": 10,
+  "requested_message_id": 10,
+  "acked_at": "2026-10-18T00:00:00+00:00",
+  "unchanged": false
+}
+```
+
+The audit log records agent, chat id, and the stored message id. It does not record message text.
+
+## `GET /v1/kb/facts?q=&limit=50`
+
+Auth required. Parses `kb/learned_facts.mdl` (`BALE_KB_DIR`), newest blocks first. `q` matches category, value, or sender. Missing file returns `{"facts": [], "count": 0}`. Iranian mobile values are masked (`98912***0000`). This does not extract new facts.
+
+## `GET /v1/analysis/faq?limit=200&since_ms=0`
+
+Auth required. Keyword categories and `faq_topic_hints` from messages **already in the inbox store** (same rules as `support_cli.py analyze`). `source` is `inbox_store` and `live_bale` is false. Example clips are at most 160 characters. `limit` is how many stored rows to scan (default 200, max 1000). This route does not sync from Bale.
+
 ## `GET /v1/inbox/chats/{chat_id}/history?limit=100`
 
 Auth required. Last `limit` stored messages of one chat, oldest first, same event shape. Used to backfill a conversation the first time it is opened.

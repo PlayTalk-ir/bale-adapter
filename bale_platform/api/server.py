@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,10 +33,16 @@ from bale_platform.api.swagger_ui import SWAGGER_UI_HTML
 from bale_platform.api.validation import validate_post_body
 from bale_platform.api_config import ApiSettings
 from bale_platform import panel_auth
+from bale_platform.analysis import analyze_concerns
 from bale_platform.contact_store import ContactBook, merge_outbox_phones_into_book
+from bale_platform.kb_facts import read_facts
 from bale_platform.outbox.store import OutboxStore
+from bale_platform.paths import facts_path
 from bale_platform.phone import panel_mobile_from_bale_digits
 from bale_platform.store import StoredMessage, SupportStore, is_private_chat_type
+
+_AGENT_RE = re.compile(r"^[\w.\-]{1,64}$")
+_FAQ_EXAMPLE_CHARS = 160
 
 logger = logging.getLogger("bale.api")
 
@@ -53,6 +61,7 @@ class ApiRuntime:
         inbox: Optional[SupportStore] = None,
         contacts: Optional[ContactBook] = None,
         get_resolver: Optional[Callable[[], Optional["RecipientResolver"]]] = None,
+        facts_file: Optional[Path] = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -64,6 +73,7 @@ class ApiRuntime:
         self.inbox = inbox
         self.contacts = contacts
         self.get_resolver = get_resolver
+        self.facts_file = facts_file
 
     def _error(self, code: str, message: str, details: dict | None = None, status: int = 400) -> web.Response:
         return web.json_response(
@@ -131,6 +141,10 @@ class ApiRuntime:
         app.router.add_get("/v1/openapi.json", self.openapi_json)
         app.router.add_get("/v1/session", self.get_session)
         app.router.add_get("/v1/inbox/events", self.get_inbox_events)
+        app.router.add_get("/v1/inbox/unread", self.get_inbox_unread)
+        app.router.add_post("/v1/inbox/ack", self.post_inbox_ack)
+        app.router.add_get("/v1/kb/facts", self.get_kb_facts)
+        app.router.add_get("/v1/analysis/faq", self.get_analysis_faq)
         app.router.add_get("/v1/contacts", self.get_contacts)
         app.router.add_post("/v1/contacts/import-roster", self.post_contacts_import_roster)
         app.router.add_get(
@@ -393,6 +407,125 @@ class ApiRuntime:
                 "events": self._events_payload(rows),
                 "next_after": rows[-1].seq if rows else after,
                 "has_more": len(rows) == limit,
+            }
+        )
+
+    def _agent_id(self, raw: Any) -> tuple[Optional[str], Optional[web.Response]]:
+        agent = str(raw or "").strip()
+        if not agent or not _AGENT_RE.match(agent):
+            return None, self._error(
+                "agent_invalid",
+                "agent must be 1–64 letters, digits, dot, underscore, or hyphen",
+                status=422,
+            )
+        return agent, None
+
+    async def get_inbox_unread(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        agent, err = self._agent_id(request.query.get("agent"))
+        if err:
+            return err
+        limit = self._limit(request, 50, 200)
+        rows = self.inbox.unread_for_agent(agent) if self.inbox is not None else []
+        rows = [row for row in rows if is_private_chat_type(row.chat_type)]
+        page = rows[:limit]
+        return web.json_response(
+            {
+                "agent": agent,
+                "events": self._events_payload(page),
+                "count": len(page),
+                "truncated": len(rows) > len(page),
+            }
+        )
+
+    async def post_inbox_ack(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        if self.inbox is None:
+            return self._error("inbox_unavailable", "support inbox is not configured", status=503)
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return self._error("agent_invalid", "invalid JSON body", status=422)
+        if not isinstance(body, dict):
+            return self._error("agent_invalid", "body must be object", status=422)
+        agent, err = self._agent_id(body.get("agent"))
+        if err:
+            return err
+        chat_id = str(body.get("chat_id") or "").strip()
+        if not chat_id.isascii() or not chat_id.isdigit():
+            return self._error(
+                "chat_invalid",
+                "chat_id must be the numeric Bale peer id",
+                status=422,
+            )
+        try:
+            message_id = int(body.get("message_id"))
+        except (TypeError, ValueError):
+            return self._error("message_invalid", "message_id must be an integer", status=422)
+        if message_id < 1:
+            return self._error("message_invalid", "message_id must be >= 1", status=422)
+        result = self.inbox.ack_at_least(agent, chat_id, message_id)
+        logger.info(
+            "inbox ack agent=%s chat_id=%s message_id=%s unchanged=%s",
+            agent,
+            chat_id,
+            result["message_id"],
+            result["unchanged"],
+        )
+        return web.json_response(
+            {
+                "agent": agent,
+                "chat_id": chat_id,
+                "message_id": result["message_id"],
+                "requested_message_id": message_id,
+                "acked_at": result["acked_at"],
+                "unchanged": result["unchanged"],
+            }
+        )
+
+    async def get_kb_facts(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        limit = self._limit(request, 50, 200)
+        query = request.query.get("q") or request.query.get("query") or ""
+        path = self.facts_file if self.facts_file is not None else facts_path()
+        return web.json_response(read_facts(path, query=str(query), limit=limit))
+
+    async def get_analysis_faq(self, request: web.Request) -> web.Response:
+        if not self._auth(request):
+            return self._error("unauthorized", "missing or invalid token", status=401)
+        limit = self._limit(request, 200, 1000)
+        raw_since = request.query.get("since_ms")
+        try:
+            since_ms = int(raw_since) if raw_since else 0
+        except ValueError:
+            since_ms = 0
+        if since_ms < 0:
+            since_ms = 0
+        messages = (
+            self.inbox.recent_messages(limit=limit, since_ms=since_ms)
+            if self.inbox is not None
+            else []
+        )
+        summary = analyze_concerns(messages, incoming_only=True, top_n=3)
+        categories = [
+            {
+                "category": bucket["category"],
+                "count": bucket["count"],
+                "examples": [str(example)[:_FAQ_EXAMPLE_CHARS] for example in bucket["examples"]],
+            }
+            for bucket in summary["categories"]
+        ]
+        return web.json_response(
+            {
+                "source": "inbox_store",
+                "live_bale": False,
+                "limit": limit,
+                "total_messages": summary["total_messages"],
+                "categories": categories,
+                "faq_topic_hints": summary["faq_topic_hints"],
             }
         )
 

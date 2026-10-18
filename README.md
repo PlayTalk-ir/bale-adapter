@@ -75,6 +75,12 @@ Optional authenticated API for queueing outbound messages from the same userbot 
 - **Docker Compose** (Laravel network, no host port): [docs/deploy-docker.md](docs/deploy-docker.md)
 - **Systemd VPS**: set `BALE_API_ENABLED=true` in `/opt/bale-adapter/.env`, put `BALE_ADAPTER_API_TOKENS` and `BALE_PHONE_PEPPER` in `/opt/bale-adapter/.env.secrets` (survives deploy). Bind stays on `127.0.0.1:8787` unless you front it with nginx/TLS.
 
+## MCP server (optional)
+
+AI clients can call that same HTTP API through an MCP server (stdio or streamable HTTP on `127.0.0.1`). It uses an API token and does not open the userbot session. How to run it, issue a token, and example Cursor / Claude config: [docs/mcp.md](docs/mcp.md).
+
+The VPS unit `systemd/bale-mcp.service` and the Compose profile `mcp` are opt-in. Deploy does not start them.
+
 ---
 
 ## Admin panel (web UI — no terminal needed)
@@ -94,12 +100,15 @@ bale-adapter/
 ├── .ai/                    # AI agent docs (start here)
 ├── bale_platform/          # adapter, inbox, outbound, contacts, api, outbox, panel
 │   ├── contact_store.py    # local contact book (data/contacts.sqlite)
+│   ├── mcp_server/         # optional MCP client of the HTTP API
 │   ├── panel.py            # web admin panel (aiohttp)
 │   └── targets.py          # Excel/CSV/text target lists
 ├── docs/api.md             # HTTP API contract
+├── docs/mcp.md             # optional MCP client of that API
 ├── deploy/nginx/           # Cloudflare origin reverse proxy (staging)
 ├── scripts/
 │   ├── support_cli.py      # AI-facing CLI
+│   ├── mcp_server.py       # optional MCP entry point
 │   ├── panel.py            # admin panel entry point
 │   ├── install-windows.ps1 # one-liner installer
 │   └── login.py            # human-only OTP

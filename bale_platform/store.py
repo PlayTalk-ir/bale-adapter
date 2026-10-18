@@ -260,6 +260,41 @@ class SupportStore:
                 (agent_id, chat_id, last_message_id, now),
             )
 
+    def ack_at_least(self, agent_id: str, chat_id: str, last_message_id: int) -> dict:
+        """Advance this agent's cursor. Same or older ids leave the row unchanged.
+
+        Repeating a request is idempotent: ``acked_at`` stays put when the
+        stored cursor is already at least ``last_message_id``.
+        """
+        target = int(last_message_id)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT last_message_id, acked_at
+                  FROM agent_acks
+                 WHERE agent_id = ? AND chat_id = ?
+                """,
+                (agent_id, str(chat_id)),
+            ).fetchone()
+            if row and int(row["last_message_id"]) >= target:
+                return {
+                    "message_id": int(row["last_message_id"]),
+                    "acked_at": str(row["acked_at"]),
+                    "unchanged": True,
+                }
+            conn.execute(
+                """
+                INSERT INTO agent_acks (agent_id, chat_id, last_message_id, acked_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(agent_id, chat_id) DO UPDATE SET
+                    last_message_id = excluded.last_message_id,
+                    acked_at = excluded.acked_at
+                """,
+                (agent_id, str(chat_id), target, now),
+            )
+        return {"message_id": target, "acked_at": now, "unchanged": False}
+
     def get_last_ack(self, agent_id: str, chat_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(
