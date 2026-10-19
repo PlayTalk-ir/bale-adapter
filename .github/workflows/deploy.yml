@@ -129,6 +129,14 @@ jobs:
               install -m 0644 deploy/nginx/snippets/bale-proxy.conf /etc/nginx/snippets/ 2>/dev/null || true
               install -m 0644 deploy/nginx/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-available/
               ln -sf /etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-enabled/
+              # The file is copied as-is (nothing rewrites listen). Refuse to
+              # reload if it would bind :443 — that port belongs to the host
+              # stream SNI router, which forwards here on 127.0.0.1:8443.
+              installed=/etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf
+              if grep -nE '^[[:space:]]*listen[[:space:]]' "$installed" | grep -E '(^|[^0-9])443([^0-9]|$)'; then
+                echo "ERROR: refusing nginx reload; ${installed} listens on 443 (SNI router owns 443; TLS vhost must be 127.0.0.1:8443 proxy_protocol)" >&2
+                exit 1
+              fi
               nginx -t && systemctl reload nginx || true
             fi
 

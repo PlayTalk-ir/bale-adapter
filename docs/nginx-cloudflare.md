@@ -22,7 +22,7 @@ Origin uses **Let's Encrypt** (`certbot` webroot → `/etc/letsencrypt/live/bale
 
 ### Proxied (orange cloud) — 525 on this VPS
 
-Cloudflare’s network often **cannot complete TLS to the origin on port 443** (error **525**), while direct clients to `5.42.223.209:443` work fine. nginx therefore serves the app on **port 80** as well (see `deploy/nginx/bale-adaptor.boostsho.ir.conf`).
+Cloudflare’s network often **cannot complete TLS to the origin on port 443** (error **525**), while direct clients to `5.42.223.209:443` work fine. nginx therefore serves the app on **port 80** as well (see `deploy/nginx/bale-adaptor.boostsho.ir.conf`). Host port 443 on steach stage is the stream SNI router, not this vhost.
 
 To use **proxied** DNS, set Cloudflare **SSL/TLS → Overview → Encryption mode** to **Flexible** (edge HTTPS → origin HTTP :80). The API token in `.env.cloudflare` can edit DNS but may not change SSL mode (403); use the dashboard if needed.
 
@@ -30,7 +30,9 @@ Alternative long-term fixes: **Cloudflare Tunnel** (`cloudflared`) or **DNS only
 
 ### DNS only (grey cloud) — recommended for staging now
 
-Set the `bale-adaptor` A record to **DNS only** (grey cloud). Clients connect directly to the origin with Let’s Encrypt on **443**.
+Set the `bale-adaptor` A record to **DNS only** (grey cloud). It currently resolves to `5.42.223.209` and responses carry no Cloudflare edge headers, so the site is not proxied.
+
+The stream SNI router owns host **443** and forwards this name to `127.0.0.1:8443` with PROXY protocol. The TLS server listens only on that address (`listen 127.0.0.1:8443 ssl proxy_protocol`) and takes the client IP with `set_real_ip_from 127.0.0.1; real_ip_header proxy_protocol`. `cloudflare-realip.conf` stays on the port-80 server only: included from a TLS location it would set `real_ip_header CF-Connecting-IP` and replace the PROXY address. Two `real_ip_header` directives in one context are a configuration error. There is no `[::]:443` listener.
 
 Also enable **Always Use HTTPS** and **Minimum TLS 1.2** in the Cloudflare dashboard when using proxied mode.
 
@@ -55,9 +57,14 @@ install -m 0644 deploy/nginx/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-avai
 ln -sf /etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf /etc/nginx/sites-enabled/
 ```
 
-On **steach-stage-vps**, install the host catch-all first so unknown hostnames never proxy to Bale (`vps-management/scripts/stage-nginx-default-catchall.sh`).
+The install copies the file unchanged; it does not rewrite `listen`. On **steach-stage-vps**, install the host catch-all first so unknown hostnames never proxy to Bale (`vps-management/scripts/stage-nginx-default-catchall.sh`).
 
 ```bash
+conf=/etc/nginx/sites-available/bale-adaptor.boostsho.ir.conf
+if grep -nE '^[[:space:]]*listen[[:space:]]' "$conf" | grep -E '(^|[^0-9])443([^0-9]|$)'; then
+  echo "refusing nginx reload: ${conf} listens on 443" >&2
+  exit 1
+fi
 nginx -t && systemctl reload nginx
 ```
 
@@ -65,8 +72,8 @@ Origin TLS: self-signed (bootstrap) or `certbot certonly --nginx -d bale-adaptor
 
 ## 4. Security layers
 
-- Bale API stays on **localhost**; only nginx is exposed on 443.
-- nginx **allow Cloudflare IP ranges only** on 443 (`cloudflare-allow.conf`).
+- Bale API stays on **localhost**. Host port 443 is the SNI router; this vhost listens on `127.0.0.1:8443`.
+- `cloudflare-allow.conf` is installed but not included on the TLS server. With DNS-only, clients are not Cloudflare addresses, so that allow-list would deny them. It remains available for an orange-cloud origin.
 - UFW: **3939** (SSH), **80/443** (HTTP/S for Cloudflare → origin).
 - API auth: **Bearer token** (`BALE_ADAPTER_API_TOKENS`) — Cloudflare does not replace this.
 
