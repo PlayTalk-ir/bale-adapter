@@ -1,7 +1,9 @@
 # runtime deps (installed by scripts/bootstrap.sh on the VPS)
-# aiobale is bundled in vendor/aiobale-source.zip (PyPI is an empty shell;
-# Enalite/aiobale GitHub repo was taken down; mirrors don't ship a setup.py).
-git+https://github.com/mehrad1232/Aiobale.git
+# aiobale comes from PyPI as aiobale-py (aminmadaniofficial/aiobale).
+# Do NOT point this at the old mehrad1232/Aiobale git repo: it is stale and
+# its dialog parsing breaks `sync` (DialogResponse ValidationError).
+# 0.3.10+ required — see requirements-docker.txt.
+aiobale-py>=0.3.10
 pydantic
 aiohttp
 aiofiles<24

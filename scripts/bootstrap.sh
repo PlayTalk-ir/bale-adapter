@@ -55,12 +55,33 @@ fi
 
 # aiobale: PyPI's bare `aiobale` is an empty shell and Enalite/aiobale was
 # taken down. The maintained continuation is `aiobale-py` on PyPI
-# (aminmadaniofficial/aiobale, 0.3.8+, compatible with our session files).
-# The vendor zip stays as an offline fallback only.
-"${VENV}/bin/pip" install --quiet 'aiobale-py>=0.3.8' >/dev/null 2>&1 || \
+# (aminmadaniofficial/aiobale, 0.3.10+, compatible with our session files).
+# 0.3.10+ required: 0.3.8 fails to list dialogs (DialogResponse
+# ValidationError on protobuf metadata) — broke `sync` on 2026-11-05.
+# The vendor zip is an offline fallback ONLY and must never silently win:
+# it bundles Enalite 0.1.5, far older than even the buggy 0.3.8.
+"${VENV}/bin/pip" install --quiet 'aiobale-py>=0.3.10' >/dev/null 2>&1 || \
     "${VENV}/bin/pip" install --quiet ./vendor/aiobale-source.zip >/dev/null 2>&1 || \
     "${VENV}/bin/python" /opt/bale-adapter/vendor/install_aiobale.py "${VENV}/bin/pip" || \
     echo "[bootstrap] WARN: aiobale install failed — run scripts/login.py will error until fixed"
+# Enforce the floor whatever path installed aiobale: if a fallback put in
+# 0.1.5 (or anything below 0.3.10), fail loudly instead of starting the
+# runner with broken dialog listing.
+if ! "${VENV}/bin/python" -c "
+import importlib.metadata as m, sys
+v = None
+for dist in ('aiobale-py', 'aiobale'):
+    try:
+        v = m.version(dist)
+        break
+    except m.PackageNotFoundError:
+        continue
+parts = tuple(int(p) for p in (v or '0').split('.')[:3])
+sys.exit(0 if parts >= (0, 3, 10) else 1)
+" 2>/dev/null; then
+    echo "[bootstrap] ERROR: installed aiobale is below 0.3.10 — dialog listing is broken there; refusing to start" >&2
+    exit 1
+fi
 "${VENV}/bin/pip" install --quiet 'pydantic' 'aiohttp' 'aiofiles<24' 'httpx' 'pyyaml' 'blackboxprotobuf' 'colorama' 'magic-filter' 'python-ulid>=2' >/dev/null 2>&1 || true
 
 chmod +x /opt/bale-adapter/scripts/login.py 2>/dev/null || true
