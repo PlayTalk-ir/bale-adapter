@@ -148,9 +148,9 @@ class BaleUserbotAdapter:
         except ImportError as exc:
             raise RuntimeError(
                 "aiobale is not installed. Run scripts/bootstrap.sh — it "
-                "installs aiobale from https://github.com/mehrad1232/Aiobale "
-                "(PyPI's aiobale is an empty shell; the original Enalite/aiobale "
-                "repo was taken down)."
+                "installs aiobale-py>=0.3.10 from PyPI "
+                "(or: pip install 'aiobale-py>=0.3.10'). "
+                "PyPI's bare `aiobale` is an empty shell; do not install it."
             ) from exc
 
         if self._dispatcher is None:
