@@ -55,9 +55,11 @@ fi
 
 # aiobale: PyPI's bare `aiobale` is an empty shell and Enalite/aiobale was
 # taken down. The maintained continuation is `aiobale-py` on PyPI
-# (aminmadaniofficial/aiobale, 0.3.8+, compatible with our session files).
+# (aminmadaniofficial/aiobale, 0.3.10+, compatible with our session files).
+# 0.3.10+ required: 0.3.8 fails to list dialogs (DialogResponse
+# ValidationError on protobuf metadata) — broke `sync` on 2026-11-05.
 # The vendor zip stays as an offline fallback only.
-"${VENV}/bin/pip" install --quiet 'aiobale-py>=0.3.8' >/dev/null 2>&1 || \
+"${VENV}/bin/pip" install --quiet 'aiobale-py>=0.3.10' >/dev/null 2>&1 || \
     "${VENV}/bin/pip" install --quiet ./vendor/aiobale-source.zip >/dev/null 2>&1 || \
     "${VENV}/bin/python" /opt/bale-adapter/vendor/install_aiobale.py "${VENV}/bin/pip" || \
     echo "[bootstrap] WARN: aiobale install failed — run scripts/login.py will error until fixed"

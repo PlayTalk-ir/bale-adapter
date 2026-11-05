@@ -5,7 +5,7 @@ description = "PlayTalk Bale userbot adapter for support AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "aiobale-py>=0.3.8",
+    "aiobale-py>=0.3.10",  # 0.3.8 breaks dialog listing (DialogResponse ValidationError); see requirements-docker.txt
     "pydantic",
     "aiohttp",
     "aiofiles<24",

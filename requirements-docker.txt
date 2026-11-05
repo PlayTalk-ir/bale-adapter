@@ -1,6 +1,8 @@
-# Runtime deps for the Docker image (PyPI aiobale-py 0.3.8).
+# Runtime deps for the Docker image (PyPI aiobale-py 0.3.10).
 # The VPS systemd path may still install aiobale from vendor/git via bootstrap.sh.
-aiobale-py==0.3.8
+# 0.3.10+ required: 0.3.8 fails to list dialogs (DialogResponse ValidationError
+# on protobuf metadata, e.g. {'13': 105} in a string field) — broke `sync`.
+aiobale-py==0.3.10
 pydantic
 aiohttp
 aiofiles<24
